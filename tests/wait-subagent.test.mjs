@@ -353,6 +353,44 @@ test('cancellation fold without an end: canceled queue does not read as pending 
   assert.doesNotMatch(out, /has not started|could not be confirmed/)
 })
 
+test('matched end + live child + unreadable session → unconfirmed, never done', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.observeSession = async () => { throw new Error('session store unreadable') }
+  fireStart(ctx, { id: 'child-1', runId: 'run-live' })
+  ctx.handlers.get('subagent/end')({ id: 'child-1', runId: 'run-live', stopReason: 'completed' })
+  // Keep the child resident/live after the cached end: the matched pair alone
+  // is not enough to claim success when the durable veto is unavailable.
+  ctx.agentStatus.set('child-1', { status: 'idle' })
+  const pending = ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  await flushMicrotasks()
+  t.mock.timers.tick(START_GRACE_MS + 1000)
+  await flushMicrotasks()
+  const out = await pending
+  assert.match(out, /could not be confirmed/)
+  assert.doesNotMatch(out, /done \(/)
+})
+
+test('next-step cancellation fold: steered input canceled before running does not stay pending', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, outcome: 'canceled', inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'aborted' } })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.match(out, /already finished its last turn \(aborted\)/)
+})
+
+test('next-step claim fold: steered input claimed by the running turn does not stay pending', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.match(out, /already finished its last turn \(completed\)/)
+})
+
 test('claim fold: queued then claimed by a turn does not stay pending', async () => {
   const ctx = makeCtx({ children: [{ id: 'child-1' }] })
   ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })

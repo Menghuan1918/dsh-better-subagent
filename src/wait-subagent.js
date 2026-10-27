@@ -53,7 +53,7 @@ const DONE = (id, stopReason) => `subagent ${id} done (${stopReason || 'complete
  * @returns disposer for the tool registration and event listeners.
  */
 export function installWaitTool(ctx) {
-  /** childId -> { runId, info } — the most recent settlement observed since mount. */
+  /** childId -> { runId, stopReason } — compact settlement projection (no child content retained). */
   const settled = new Map()
   /** childId -> { runId } — the most recent activation start observed since mount. */
   const started = new Map()
@@ -80,7 +80,7 @@ export function installWaitTool(ctx) {
   const offEnd = ctx.on('subagent/end', (info) => {
     const id = info && info.id
     if (typeof id !== 'string') return
-    settled.set(id, { runId: info.runId, info })
+    settled.set(id, { runId: info.runId, stopReason: info.stopReason })
     notify(id)
   })
 
@@ -172,10 +172,10 @@ export function installWaitTool(ctx) {
     if (end !== undefined && endMatchesStart) {
       if (turns !== undefined) {
         if (turns.pending) return { kind: 'pending-input' }
-        return { kind: 'settled', info: end.info }
+        return { kind: 'settled', info: end }
       }
       return statusOf(id) === 'ready'
-        ? { kind: 'settled', info: end.info }
+        ? { kind: 'settled', info: end }
         : { kind: 'unconfirmed', reason: 'state-unreadable' }
     }
     if (end !== undefined && !endMatchesStart) return { kind: 'new-activation' }
