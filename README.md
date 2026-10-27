@@ -156,7 +156,7 @@ Apollo 的通用工程原则、完整工作流 skills、job/general 守卫措辞
 
 - `npm test`：配置规约、CLI argv/JSONL、身份 KV 命名空间与重开、adapter 生命周期/回滚/游标/卸载、子代理路由/范围/守卫/fork 拒绝/白名单/cwd/预检、wait 契约/批量/超时/宽限/无 inbox 手术 + **跨回合回归**、子代理退出守卫、路由/信任边界/别名、客户端表单/四个槽键、manifest/patch/exports/发布工作流。
 - 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、真实 `dsh-settings` 投影（schema 含 `childExitGuard`、`value` 不含 `trustedHosts`、越权写被拒）与 volatile 热更新、真实 `webServer` 上的 canonical + `/apollo/api` 别名路由（200/404/405）、原生 create → `wait_subagent` → 结算通知携带子代理正文 → 续接 → 等待 → 运行中子代理退出守卫真实拦截并继续回合 → 中断 → 等待。
-- 真实 Claude CLI（本机已登录）临时 profile 端到端，含**真实宿主重启**：创建 CLI 子代理 → 等待 → 落盘 `apollo_cli_<hash>/sessions/<id>.json` → dispose 后在同一 profile 重新 boot、恢复父 Agent → cold resume 同一 CLI 子代理（remoteId 不变）→ 等待 → 运行中中断 → 等待；plan 权限、无工具，会消耗少量 Claude 额度。
+- 真实 Claude CLI（本机已登录）临时 profile 端到端，含**同 profile/DSH_HOME 的进程内宿主重启**（dispose 宿主 fiber 后在同一进程、同一 profile 重新 boot，不是另一个 OS 进程）：创建 CLI 子代理 → 等待 → 落盘 `apollo_cli_<hash>/sessions/<id>.json` → 重新 boot、恢复父 Agent → cold resume 同一 CLI 子代理（remoteId 不变）→ 等待 → 运行中中断 → 等待；plan 权限、无工具，会消耗少量 Claude 额度。
 - 真实 JSON storage backend（宿主 `@deepseek-ai/dsh-storage-json`）的 per-record KV 关闭/重开测试（`tests/cli-sessions.test.mjs`）。
 - **未验证**：Codex CLI 端到端（本机 `codex login status` = `Not logged in`，属于凭据阻塞）；从 npm 正式发布后的 `dsh plugin add` 安装路径与真实 Web GUI 设置页点击（本仓库尚无发布）；Apollo + 本插件组合运行（S4）。
 

@@ -124,7 +124,7 @@ npm test
 # 真实宿主（headless，无需 CLI 凭据）：原生 subagent create→wait→continue→wait→interrupt→wait
 DSH_PACKAGE_ROOT="/path/to/dependencies/dsh/node_modules/@deepseek-ai/dsh" npm run smoke
 
-# 真实 Claude CLI（需要已登录；会消耗少量额度；含真实宿主重启 + KV 重开 + cold resume）
+# 真实 Claude CLI（需要已登录；会消耗少量额度；含同 profile 的进程内宿主重启 + KV 重开 + cold resume）
 DSH_PACKAGE_ROOT="/path/to/dependencies/dsh/node_modules/@deepseek-ai/dsh" node scripts/cli-smoke.mjs claude
 
 # 真实 Codex CLI（需要 `codex login`；当前机器未登录时不可用）
@@ -151,7 +151,7 @@ npm ci --dry-run
 | `tests/client.test.mjs` | 真实 React hooks/元素树：四个槽键、表单控件、保存/冲突/只读、发现、分档 |
 | `tests/assembly.test.mjs` | manifest、bundle patch、exports、client closure id/键、发布工作流、包白名单、NOTICE |
 
-真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`（检查：真实 settings 投影/volatile 热更新、真实 webServer canonical+别名路由、结算通知正文、childExitGuard 真实 turn-stopping），CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`（检查：真实 CLI 创建/等待、身份记录落盘、宿主重启+父 Agent 恢复、KV 重开+cold CLI resume、remoteId 稳定、中断），并在临时 `DSH_HOME/results.json` 留下检查项。
+真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`（检查：真实 settings 投影/volatile 热更新、真实 webServer canonical+别名路由、结算通知正文、childExitGuard 真实 turn-stopping），CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`（检查：真实 CLI 创建/等待、身份记录落盘、同 profile/DSH_HOME 的进程内宿主重启+父 Agent 恢复、KV 重开+cold CLI resume、remoteId 稳定、中断；不是独立 OS 进程），并在临时 `DSH_HOME/results.json` 留下检查项。
 
 CLI smoke 会把 DSH profile 放在临时目录，但不会改 Claude/Codex 的原生 home（改 `CLAUDE_CONFIG_DIR` 会改变凭据/keychain 查找）；真实 CLI 自己的原生会话因此会留在该 CLI 的用户目录下，脚本不清理这些原生会话。
 

@@ -19,18 +19,20 @@
  * - `childExitGuard=true` intercepts a real parent turn stop while a direct
  *   child is running, the model can then interrupt/wait, and the turn finishes.
  *
- * No external CLI is started (CLI end-to-end lives in scripts/cli-smoke.mjs).
+ * No managed CLI child is executed here; the capabilities route may legitimately
+ * run `<cli> --version` as a probe. CLI end-to-end lives in scripts/cli-smoke.mjs.
  *
  * Run:
  *   DSH_PACKAGE_ROOT="/…/node_modules/@deepseek-ai/dsh" node scripts/runtime-smoke.mjs
  */
 
 import assert from 'node:assert/strict'
+import { existsSync, readdirSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile, cp, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dsh = process.env.DSH_PACKAGE_ROOT
@@ -94,6 +96,8 @@ try {
   // Scripted provider. `slowSessions` hold a turn open until aborted; the
   // parent reacts to the child-exit-guard notice by interrupting then waiting.
   const slowSessions = new Set()
+  const scriptedStreams = new Set()
+  const childIds = new Set()
   let parentId
   let guardTarget
   let guardSeen = false
@@ -128,6 +132,7 @@ try {
       return { model: await adapter.resolveModel(provider, model), stream: (options) => adapter.stream(options) }
     },
     async *stream(options) {
+      scriptedStreams.add(options.sessionId)
       if (slowSessions.has(options.sessionId)) {
         await new Promise((resolveWait, reject) => {
           const timer = setTimeout(resolveWait, 30_000)
@@ -240,6 +245,7 @@ try {
   // ── native create → wait; the settlement notice keeps the child content ───
   const activation = await call('subagent', { description: 'smoke child', prompt: 'First smoke turn.' })
   const childId = activation.subagentId
+  childIds.add(childId)
   const firstWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(firstWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
   assert.doesNotMatch(firstWait, /Smoke response/)
@@ -275,6 +281,7 @@ try {
   const slow = await call('subagent', { description: 'guarded slow child', prompt: 'Slow guarded turn.' })
   guardTarget = slow.subagentId
   slowSessions.add(guardTarget)
+  childIds.add(guardTarget)
   const runningDeadline = Date.now() + 10_000
   while (ctx.agents.get(guardTarget)?.status !== 'running' && Date.now() < runningDeadline) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 20))
@@ -305,6 +312,20 @@ try {
   agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Plain parent turn.' }], source: { kind: 'user' } }))
   await agent.whenIdle()
 
+  // ── no managed CLI child execution ────────────────────────────────────────
+  // A CLI child always persists an apollo_cli_ identity record before spawning
+  // its CLI. No record means no managed CLI execution was started (the
+  // capabilities probe's `--version` runs are not child executions).
+  const profileDir = ctx.get('profileContext')?.dir ?? dir
+  const cliNamespace = `apollo_cli_${createHash('sha256').update(profileDir).digest('hex').slice(0, 16)}`
+  const cliSessionDir = join(home, 'storages', cliNamespace, 'sessions')
+  assert.equal(
+    existsSync(cliSessionDir) && readdirSync(cliSessionDir).length > 0,
+    false,
+    'no managed CLI identity record must exist (no CLI child execution)',
+  )
+  for (const id of childIds) assert.equal(scriptedStreams.has(id), true, `child ${id} ran through the native/scripted route, not a CLI adapter`)
+
   const result = {
     passed: true,
     profile: dir,
@@ -320,7 +341,7 @@ try {
       'continue-wait',
       'child-exit-guard-real-turn-stopping',
       'interrupt-wait',
-      'no-external-cli',
+      'no-managed-cli-child-execution',
     ],
     cliE2E: 'not-run here (scripts/cli-smoke.mjs covers it)',
   }

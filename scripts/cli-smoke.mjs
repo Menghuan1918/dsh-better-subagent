@@ -3,20 +3,23 @@
  *
  * Boots an isolated headless profile with this package installed, enables one
  * CLI backend in the row config, and drives the managed CLI child through the
- * real host tools, including a real process restart:
+ * real host tools, including an in-process host reboot on the same
+ * profile/DSH_HOME:
  *
- *   create → wait_subagent → (flush + dispose host) → boot again → resume the
- *   parent Agent → send_message (cold CLI resume) → wait_subagent →
- *   send_message again → interrupt_agent → wait_subagent
+ *   create → wait_subagent → (flush + dispose the host fiber) → boot again in
+ *   this same process on the same profile → resume the parent Agent →
+ *   send_message (cold CLI resume) → wait_subagent → send_message again →
+ *   interrupt_agent → wait_subagent
  *
- * The restart leg is the in-repo two-process resume evidence: the CLI identity
- * KV (`apollo_cli_<hash>` per-record JSON under the temp DSH_HOME) is reopened
- * by a fresh host process and the same durable child continues through its
- * native CLI session.
+ * The reboot leg is the in-repo reopen evidence: the CLI identity KV
+ * (`apollo_cli_<hash>` per-record JSON under the temp DSH_HOME) is reopened by
+ * a fresh host fiber/boot with the same profile/DSH_HOME, and the same durable
+ * child continues through its native CLI session. This is an in-process host
+ * reboot, NOT a separate OS process.
  *
  * This starts the real CLI binary (plan/read-only permission, no tools) for
- * three child turns across one host restart and therefore consumes a little
- * quota. It never touches the repository
+ * three child turns across one in-process host reboot and therefore consumes a
+ * little quota. It never touches the repository
  * and keeps the DSH profile in a temp directory; the CLI's own native
  * session/credential home stays the user's, because changing CLAUDE_CONFIG_DIR
  * would change Claude's keychain lookup and lose auth.
@@ -139,8 +142,8 @@ try {
   const recordText = await readFile(recordPath, 'utf8')
   assert.match(recordText, /"remoteId"/, 'the stored identity is the resumable CLI session id')
 
-  // 2) real host restart: flush + dispose, boot a fresh process-ish runtime on
-  // the same profile/DSH_HOME, resume the parent, then continue the child.
+  // 2) in-process host reboot on the same profile/DSH_HOME: flush + dispose,
+  // boot again, resume the parent, then continue the child.
   await ctx.sessions.flush(agent.session)
   await ctx.fiber.dispose()
   ctx = undefined
@@ -155,9 +158,9 @@ try {
   assert.ok(existsSync(recordPath), 'the reopened host sees the same per-record identity file')
   const reopened = await readFile(recordPath, 'utf8')
   const remoteId = /"remoteId":\s*"([^"]+)"/.exec(reopened)?.[1]
-  assert.equal(typeof remoteId, 'string', 'the resumable CLI session id survived the restart')
+  assert.equal(typeof remoteId, 'string', 'the resumable CLI session id survived the reboot')
 
-  // 3) continue the same durable child after restart (cold CLI resume).
+  // 3) continue the same durable child after the in-process reboot (cold CLI resume).
   await call('send_message', { agent_id: childId, message: 'Reply with exactly the text: SMOKE TWO' })
   const secondWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(secondWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
@@ -190,7 +193,7 @@ try {
       'cli-route-registered',
       'real-cli-create-wait',
       'real-storage-identity-record',
-      'host-restart-and-parent-resume',
+      'host-reboot-and-parent-resume',
       'kv-reopen-and-cold-cli-resume',
       'remote-id-stable-across-resume',
       'real-cli-interrupt-wait',
