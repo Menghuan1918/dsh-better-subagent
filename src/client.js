@@ -586,9 +586,17 @@ window.__ModuleLoader__.load({
 			return nodes;
 		}
 
-		/** 一个模型的编辑行：effort 用本地文本缓冲（直接回填解析结果会吃掉未输完的逗号）。 */
+		/**
+		 * 一个模型的编辑行：effort 用本地文本缓冲（直接回填解析结果会吃掉未输完的逗号）。
+		 * 缓冲同时记住“它对应的已解析 effort 列表”。用户输入时缓冲与解析结果一起更新，
+		 * 因此不会触发下面的同步；只有外部变化（删除上一行导致同 index 换成另一个模型、
+		 * 宿主 revision 刷新、自动发现改写列表）才会让 key 不匹配并重置文本。
+		 */
 		function ModelRow({ model, index, disabled, t: translate, onPatch, onRemove }) {
-			const [effortsText, setEffortsText] = useState(model.efforts.join(', '));
+			const effortsKey = model.efforts.join('\u0000');
+			const [buffer, setBuffer] = useState({ key: effortsKey, text: model.efforts.join(', ') });
+			if (buffer.key !== effortsKey) setBuffer({ key: effortsKey, text: model.efforts.join(', ') });
+			const effortsText = buffer.key === effortsKey ? buffer.text : model.efforts.join(', ');
 			return h('div', { className: 'bs-model' },
 				h('input', {
 					className: 'bs-input',
@@ -607,8 +615,10 @@ window.__ModuleLoader__.load({
 					disabled,
 					'aria-label': translate('modelsLabel') + ' ' + String(index + 1),
 					onChange: (event) => {
-						const efforts = parseEfforts(event.target.value);
-						setEffortsText(event.target.value);
+						const text = event.target.value;
+						const efforts = parseEfforts(text);
+						// 本地输入同步前进 buffer 的 key，避免渲染期“外部变化”分支吃掉原始文本。
+						setBuffer({ key: efforts.join('\u0000'), text });
 						// 默认 effort 不属于新的列表时清空（宿主读回同规则）。
 						onPatch({
 							efforts,

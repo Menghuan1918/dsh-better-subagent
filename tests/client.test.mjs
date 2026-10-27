@@ -76,6 +76,10 @@ function makeForm(options = {}) {
       }
       return accept(ops)
     },
+    /** Replace the host snapshot externally (host revision advanced elsewhere). */
+    replace(value) {
+      snapshot = { ...snapshot, value, revision: snapshot.revision + 1 }
+    },
     finish(ok) {
       assert.equal(typeof settle, 'function', 'mutate is not pending')
       settle(ok)
@@ -388,6 +392,67 @@ test('模型 effort 关联与启用校验：缓冲保住逗号、失配清空、
   await page.run(async () => { byLabel(renderer, 'modelRemove').props.onClick() })
   assert.equal(saveButton(renderer).props.disabled, true)
   assert.match(pageText(renderer), /invalidNoModels/)
+})
+
+test('模型行缓冲：删除上一行后剩余行显示自己的 efforts（同 index 复用）', async () => {
+  const TWO_MODELS = {
+    ...READY,
+    subagents: {
+      ...READY.subagents,
+      codex: {
+        ...READY.subagents.codex,
+        defaultModel: 'a',
+        models: [
+          { id: 'a', efforts: ['low', 'high'], defaultEffort: 'high' },
+          { id: 'b', efforts: ['medium', 'max'], defaultEffort: 'max' },
+        ],
+      },
+    },
+  };
+  const page = await mountPage({ form: { value: TWO_MODELS } })
+  const renderer = page.renderer
+  await page.run(async () => {})
+  assert.equal(byLabel(renderer, 'modelIdPlaceholder 1').props.value, 'a')
+  assert.equal(byLabel(renderer, 'modelsLabel 1').props.value, 'low, high')
+  assert.equal(byLabel(renderer, 'modelsLabel 2').props.value, 'medium, max')
+
+  // Remove "a"; "b" moves into index 0 and reuses the component instance.
+  await page.run(async () => { byLabel(renderer, 'modelRemove').props.onClick() })
+  assert.equal(byLabel(renderer, 'modelIdPlaceholder 1').props.value, 'b')
+  assert.equal(byLabel(renderer, 'modelsLabel 1').props.value, 'medium, max', 'stale effort text must be resynced')
+  assert.deepEqual(optionsOf(byLabel(renderer, 'modelDefaultEffort 1')), ['', 'medium', 'max'])
+})
+
+test('模型行缓冲：宿主 revision 外部更新后 effort 文本同步，不保存陈旧值', async () => {
+  const TWO_MODELS = {
+    ...READY,
+    subagents: {
+      ...READY.subagents,
+      codex: {
+        ...READY.subagents.codex,
+        defaultModel: 'a',
+        models: [{ id: 'a', efforts: ['low', 'high'], defaultEffort: 'high' }],
+      },
+    },
+  };
+  const page = await mountPage({ form: { value: TWO_MODELS } })
+  const renderer = page.renderer
+  await page.run(async () => {})
+  assert.equal(byLabel(renderer, 'modelsLabel 1').props.value, 'low, high')
+
+  page.controller.replace({
+    ...TWO_MODELS,
+    subagents: {
+      ...TWO_MODELS.subagents,
+      codex: {
+        ...TWO_MODELS.subagents.codex,
+        models: [{ id: 'a', efforts: ['medium', 'max'], defaultEffort: 'medium' }],
+      },
+    },
+  })
+  await page.update()
+  assert.equal(byLabel(renderer, 'modelsLabel 1').props.value, 'medium, max', 'external revision must resync the buffer')
+  assert.deepEqual(optionsOf(byLabel(renderer, 'modelDefaultEffort 1')), ['', 'medium', 'max'])
 })
 
 test('capabilities 失败：降级提示但保存仍可用', async () => {
