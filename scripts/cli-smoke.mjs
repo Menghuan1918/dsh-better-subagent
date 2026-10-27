@@ -14,8 +14,9 @@
  * by a fresh host process and the same durable child continues through its
  * native CLI session.
  *
- * This starts the real CLI binary (plan/read-only permission, no tools) a few
- * times and therefore consumes a little quota. It never touches the repository
+ * This starts the real CLI binary (plan/read-only permission, no tools) for
+ * three child turns across one host restart and therefore consumes a little
+ * quota. It never touches the repository
  * and keeps the DSH profile in a temp directory; the CLI's own native
  * session/credential home stays the user's, because changing CLAUDE_CONFIG_DIR
  * would change Claude's keychain lookup and lose auth.
