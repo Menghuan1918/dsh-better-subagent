@@ -158,13 +158,14 @@ test('CROSS-TURN REGRESSION: old end → new start + queued input while idle →
   await flushMicrotasks()
   assert.equal(pending.settled, false, 'the previous activation end must not satisfy the new turn')
 
-  // The queued input opens and then ends its turn.
+  // The queued input opens a turn, is claimed by it, and the turn ends.
   ctx.agentStatus.set('child-1', { status: 'running' })
   ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
   await flushMicrotasks()
   assert.equal(pending.settled, false, 'a running child keeps waiting')
 
   ctx.agentStatus.set('child-1', { status: 'idle' })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
   ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
   fireEnd(ctx, { id: 'child-1', runId: 'run-new', stopReason: 'completed' })
   await pending.promise
@@ -190,9 +191,10 @@ test('CROSS-TURN REGRESSION: queued input after the last turn end keeps waiting 
   await flushMicrotasks()
   assert.equal(pending.settled, false, 'queued input newer than turn/end means a turn is still owed')
 
-  // That input runs and ends; only now does the activation settle.
+  // That input is claimed and runs; only now does the activation settle.
   ctx.agentStatus.set('child-1', { status: 'running' })
   ctx.sessionQuery.append('child-1', 'turn/start', { turn: 2 })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
   ctx.sessionQuery.append('child-1', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
   ctx.agentStatus.set('child-1', { status: 'idle' })
   fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'completed' })
@@ -213,9 +215,41 @@ test('stale end paired with a newer start never settles as the current turn', as
   assert.equal(pending.settled, false, 'a new activation start invalidates the old end')
   ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
   ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
   ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
   ctx.agentStatus.set('child-1', { status: 'idle' })
   fireEnd(ctx, { id: 'child-1', runId: 'run-new', stopReason: 'completed' })
+  await pending.promise
+  assert.equal(pending.value, DONE('child-1'))
+})
+
+test('RESIDENT-IDLE REGRESSION: matched old end does not settle newer queued input without a new start', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  // Activation r1: its turn ended and an end was observed. (The child remains
+  // resident-idle in this construction, so no new start follows.)
+  fireStart(ctx, { id: 'child-1', runId: 'run-1' })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'completed' })
+  ctx.agentStatus.set('child-1', { status: 'idle' })
+
+  // The parent queues new input while the child is still idle: the host emits
+  // no new subagent/start for a resident child, so only the durable splice
+  // proves a turn is still owed.
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
+  const pending = tracked(ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec()))
+  await flushMicrotasks()
+  assert.equal(pending.settled, false, 'the matched old end must not settle a resident child with queued input')
+
+  // The queued input opens a turn and is claimed; the turn then ends.
+  ctx.agentStatus.set('child-1', { status: 'running' })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 2 })
+  await flushMicrotasks()
+  assert.equal(pending.settled, false, 'a running resident child keeps waiting')
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
+  ctx.agentStatus.set('child-1', { status: 'idle' })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'completed' })
   await pending.promise
   assert.equal(pending.value, DONE('child-1'))
 })
@@ -329,7 +363,7 @@ test('claim fold: queued then claimed by a turn does not stay pending', async ()
   assert.match(out, /already finished its last turn \(completed\)/)
 })
 
-test('matched end is terminal even when no DSH session is readable (external provider)', async () => {
+test('matched end is terminal when no DSH session is readable and the child is not live (external provider)', async () => {
   const ctx = makeCtx({ children: [{ id: 'child-1' }] })
   ctx.sessionQuery.observeSession = async () => { throw new Error('external child has no DSH session') }
   fireStart(ctx, { id: 'child-1', runId: 'run-ext' })

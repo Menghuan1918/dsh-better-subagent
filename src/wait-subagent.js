@@ -153,11 +153,13 @@ export function installWaitTool(ctx) {
    * Decide one child's current state from host-provable facts only.
    *
    * A `subagent/end` paired with the latest `subagent/start` runId is the
-   * activation's terminal edge: the host emits it only after that exact
-   * activation released its handle and its inbox had no runnable work left.
-   * Durable session state is therefore additional evidence for the no-end
-   * cases, not a veto over a matched end (queued work may have been canceled
-   * before it ran, and external providers need no readable DSH session).
+   * activation's terminal edge, but it must not override newer runnable input:
+   * a resident idle child can receive new input without a new `subagent/start`,
+   * so the durable suffix still vetoes a matched end while `pending > 0`.
+   * Canceled/claimed work folds to `pending === 0` and therefore does not veto.
+   * When the durable state is unreadable, the matched pair settles only if the
+   * child is no longer live (external provider with no local DSH session); a
+   * live child stays `unconfirmed` rather than claiming success.
    * @returns {Promise<{kind:'running'|'pending-input'|'new-activation'|'awaiting-end'|'unconfirmed'|'ended-earlier'|'settled', info?, reason?}>}
    */
   const evaluate = async (id) => {
@@ -166,9 +168,17 @@ export function installWaitTool(ctx) {
     const start = started.get(id)
     const endMatchesStart = end !== undefined
       && (start === undefined || start.runId === undefined || end.runId === start.runId)
-    if (end !== undefined && endMatchesStart) return { kind: 'settled', info: end.info }
-    if (end !== undefined && !endMatchesStart) return { kind: 'new-activation' }
     const turns = await readTurns(id)
+    if (end !== undefined && endMatchesStart) {
+      if (turns !== undefined) {
+        if (turns.pending) return { kind: 'pending-input' }
+        return { kind: 'settled', info: end.info }
+      }
+      return statusOf(id) === 'ready'
+        ? { kind: 'settled', info: end.info }
+        : { kind: 'unconfirmed', reason: 'state-unreadable' }
+    }
+    if (end !== undefined && !endMatchesStart) return { kind: 'new-activation' }
     if (turns === undefined) return { kind: 'unconfirmed', reason: 'state-unreadable' }
     if (turns.pending) return { kind: 'pending-input' }
     if (statusOf(id) === 'ready' && turns.lastTurnEnd >= 0) return { kind: 'ended-earlier', reason: turns.reason }
