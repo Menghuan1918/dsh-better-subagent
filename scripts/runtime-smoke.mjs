@@ -3,15 +3,23 @@
  *
  * Boots an isolated headless DSH profile from the installed host packages with
  * this package installed as a plain (unbuilt) plugin, then exercises the real
- * host lifecycle through the real tools:
+ * host surface:
  *
- *   native subagent create → wait_subagent → send_message continue →
- *   wait_subagent → interrupt_agent → wait_subagent
+ * - the one host-plane row loads with no Apollo installed;
+ * - `wait_subagent` is visible and the per-Agent prompt sections really
+ *   assemble through `ctx.systemPrompt.assemble`;
+ * - the real dsh-settings service projects exactly the volatile form and
+ *   rejects deployment-only writes; a hot `childExitGuard` update takes effect
+ *   without remounting the row;
+ * - the real `webServer` serves `/better-subagent/api/*` (canonical + Apollo
+ *   read aliases) with the trust fence and 404/405 semantics;
+ * - native subagent create → wait_subagent (short line) → the framework
+ *   settlement notice still carries the child's closing content → resume via
+ *   send_message → wait → interrupt → wait;
+ * - `childExitGuard=true` intercepts a real parent turn stop while a direct
+ *   child is running, the model can then interrupt/wait, and the turn finishes.
  *
- * It also verifies the per-Agent prompt sections are registered on the live
- * host (`ctx.systemPrompt.assemble`) and that wait_subagent is a host-plane
- * tool. No external CLI is started: CLI end-to-end needs real codex/claude
- * credentials and is reported separately by the implementation node.
+ * No external CLI is started (CLI end-to-end lives in scripts/cli-smoke.mjs).
  *
  * Run:
  *   DSH_PACKAGE_ROOT="/…/node_modules/@deepseek-ai/dsh" node scripts/runtime-smoke.mjs
@@ -55,8 +63,11 @@ await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([
   { id: 'headless-startup', disabled: true },
   { id: 'headless-runner', disabled: true },
   { id: 'credentials', disabled: false, config: { watch: false } },
-  // Row config: opt into the global subagent scope with one (unused) CLI
-  // backend so the CLI catalog prompt renders; nothing spawns codex here.
+  // A real HTTP listener on a random loopback port for the read-only API test.
+  { insert: [{ id: 'webserver', name: '@deepseek-ai/dsh-host-webserver', config: { host: '127.0.0.1', port: 0 } }] },
+  // Row config: global subagent scope with one (unused) CLI backend so the CLI
+  // catalog prompt renders. childExitGuard is enabled later through the real
+  // settings service to prove volatile hot apply; nothing spawns codex here.
   {
     id: 'dsh-better-subagent',
     config: {
@@ -80,10 +91,33 @@ try {
   const booted = await runProfile({ profile: 'it', patchFiles: [], args: [], environment: A.loadLayeredEnv('dsh') })
   ctx = booted.ctx
 
-  // Scripted provider: parent and children turn text answers. The optional
-  // `slow` session id holds a turn open until interrupted.
+  // Scripted provider. `slowSessions` hold a turn open until aborted; the
+  // parent reacts to the child-exit-guard notice by interrupting then waiting.
   const slowSessions = new Set()
-  const streams = []
+  let parentId
+  let guardTarget
+  let guardSeen = false
+  let guardInterrupted = false
+  let guardWaited = false
+  const lastUserText = (messages) => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message.role !== 'user') continue
+      const blocks = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content
+      return (blocks ?? []).filter((block) => block?.type === 'text').map((block) => block.text).join('\n')
+    }
+    return ''
+  }
+  const toolCall = (name, args) => {
+    const id = `smoke-${randomUUID()}`
+    const argumentsText = JSON.stringify(args)
+    return [
+      { type: 'block-start', index: 0, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: argumentsText },
+      { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: argumentsText } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ]
+  }
   const adapter = {
     providerInfo: (id) => ({ id, name: 'Better Subagent smoke adapter' }),
     providerRetryPolicy: () => undefined,
@@ -94,7 +128,6 @@ try {
       return { model: await adapter.resolveModel(provider, model), stream: (options) => adapter.stream(options) }
     },
     async *stream(options) {
-      streams.push(options.sessionId)
       if (slowSessions.has(options.sessionId)) {
         await new Promise((resolveWait, reject) => {
           const timer = setTimeout(resolveWait, 30_000)
@@ -103,6 +136,21 @@ try {
             reject(options.signal.reason ?? new Error('aborted'))
           }, { once: true })
         })
+      }
+      const userText = lastUserText(options.messages ?? [])
+      const inGuard = userText.includes('Direct subagent work is still running')
+      if (options.sessionId === parentId && inGuard && guardTarget !== undefined) {
+        guardSeen = true
+        if (!guardInterrupted) {
+          guardInterrupted = true
+          for (const chunk of toolCall('interrupt_agent', { agent_id: guardTarget })) yield chunk
+          return
+        }
+        if (!guardWaited) {
+          guardWaited = true
+          for (const chunk of toolCall('wait_subagent', { subagent_id: [guardTarget] })) yield chunk
+          return
+        }
       }
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'Smoke response.' }
@@ -119,19 +167,21 @@ try {
     setup: async () => {},
   })
   const agent = created.agent
+  parentId = agent.id
   const tool = (name) => {
     const definition = ctx.tools.get(name, agent)
     assert.ok(definition, `${name} must be visible to the Agent`)
     return definition
   }
-  const call = async (name, args, { signal = new AbortController().signal } = {}) => {
+  const call = async (name, args) => {
     tool(name)
-    const result = await ctx.tools.execute({ name, arguments: args, agent, signal, callId: randomUUID() })
+    const result = await ctx.tools.execute({ name, arguments: args, agent, signal: new AbortController().signal, callId: randomUUID() })
     assert.equal(result.isError, false, `${name} failed: ${JSON.stringify(result.error ?? result.content)}`)
     return result.value
   }
+  const disposeLease = (lease) => { try { lease?.[Symbol.dispose]?.() } catch { /* released */ } }
 
-  // Host-plane wait_subagent + prompt sections on the live host.
+  // ── row, tool and per-Agent prompt sections on the live host ──────────────
   assert.equal(typeof tool('wait_subagent').execute, 'function')
   const assembly = await ctx.systemPrompt.assemble({ agent, scope: agent })
   const sectionNames = assembly.sections.map((section) => section.name)
@@ -144,41 +194,115 @@ try {
   assert.match(catalog, /provider="codex"/)
   assert.match(catalog, /codex — Codex CLI/)
 
-  // 1) create a native continuable subagent through the real subagent tool.
-  const activation = await call('subagent', {
-    description: 'smoke child',
-    prompt: 'First smoke turn.',
-  })
-  assert.equal(activation.kind, 'activation')
-  const childId = activation.subagentId
-  assert.equal(typeof childId, 'string')
+  // ── real dsh-settings projection + hot volatile update ────────────────────
+  const settings = ctx.get('settings')
+  assert.ok(settings, 'real settings service is available')
+  const findRow = async () => {
+    const rows = await settings.describe()
+    const row = rows.find((entry) => entry.ns === 'dsh-better-subagent')
+    assert.ok(row, 'the row exposes a formal Config')
+    return row
+  }
+  let settingsRow = await findRow()
+  assert.equal('trustedHosts' in settingsRow.value, false, 'deployment flag is outside the editable form')
+  assert.equal('childExitGuard' in settingsRow.value, true)
+  assert.equal(settingsRow.value.childExitGuard, false)
+  const formText = JSON.stringify(settingsRow.schema)
+  assert.match(formText, /childExitGuard/)
+  assert.doesNotMatch(formText, /trustedHosts/)
+  await assert.rejects(
+    () => settings.update('dsh-better-subagent', { trustedHosts: ['evil.example.com'] }, settingsRow.revision),
+    /not volatile/,
+  )
+  await settings.update('dsh-better-subagent', { childExitGuard: true }, settingsRow.revision)
+  settingsRow = await findRow()
+  assert.equal(settingsRow.value.childExitGuard, true, 'volatile update is persisted in the form snapshot')
 
-  // 2) wait for the first turn to settle (short done line, not child content).
+  // ── real webServer: canonical route, Apollo read alias, 404/405 ───────────
+  const origin = ctx.webServer.getOrigin()
+  const http = async (path, init) => {
+    const response = await fetch(`${origin}${path}`, init)
+    const body = await response.json().catch(() => undefined)
+    return { status: response.status, body }
+  }
+  const capabilities = await http('/better-subagent/api/capabilities')
+  assert.equal(capabilities.status, 200)
+  assert.equal(capabilities.body.ok, true)
+  assert.equal(typeof capabilities.body.value.executables.codex.path, 'string')
+  assert.equal(Array.isArray(capabilities.body.value.codexProfiles), true)
+  const routes = await http('/apollo/api/routes')
+  assert.equal(routes.status, 200)
+  assert.equal(routes.body.ok, true)
+  assert.equal(Array.isArray(routes.body.value.routes), true)
+  assert.equal((await http('/better-subagent/api/unknown')).status, 404)
+  assert.equal((await http('/better-subagent/api/capabilities', { method: 'POST', body: '{}' })).status, 405)
+
+  // ── native create → wait; the settlement notice keeps the child content ───
+  const activation = await call('subagent', { description: 'smoke child', prompt: 'First smoke turn.' })
+  const childId = activation.subagentId
   const firstWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(firstWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
   assert.doesNotMatch(firstWait, /Smoke response/)
+  // The settlement notice wakes a parent turn; read the durable parent log to
+  // prove the notice (with the child's closing content) was delivered. The
+  // claim/append races the direct tool call, so poll briefly.
+  const findSettlementEvent = async (id) => {
+    const deadline = Date.now() + 10_000
+    while (Date.now() < deadline) {
+      const lease = await ctx.sessionQuery.observeSession(agent.id)
+      const event = lease.events.find((candidate) => candidate.type === 'user/message'
+        && candidate.data?.source?.kind === 'subagent-settled'
+        && candidate.data.source.senderSessionId === id)
+      disposeLease(lease)
+      if (event !== undefined) return event
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+    }
+    return undefined
+  }
+  const noticeEvent = await findSettlementEvent(childId)
+  const noticeText = noticeEvent?.data.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n') ?? ''
+  assert.ok(noticeEvent, 'the framework settlement notice must still be delivered')
+  assert.match(noticeText, /Smoke response\./, 'the notice carries the closing content, not just the wait line')
+  await agent.whenIdle()
 
-  // 3) continue the same durable child, then wait again.
+  // ── continue the same durable child, then wait again ─────────────────────
   await call('send_message', { agent_id: childId, message: 'Second smoke turn.' })
   const secondWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(secondWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
+  await agent.whenIdle()
 
-  // 4) interrupt a running child, then wait for its aborted settlement.
-  const slow = await call('subagent', { description: 'slow smoke child', prompt: 'Slow smoke turn.' })
-  const slowId = slow.subagentId
-  slowSessions.add(slowId)
-  const deadline = Date.now() + 10_000
-  while (ctx.agents.get(slowId)?.status !== 'running' && Date.now() < deadline) {
-    await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+  // ── childExitGuard intercepts a real turn stop; the model handles it ─────
+  const slow = await call('subagent', { description: 'guarded slow child', prompt: 'Slow guarded turn.' })
+  guardTarget = slow.subagentId
+  slowSessions.add(guardTarget)
+  const runningDeadline = Date.now() + 10_000
+  while (ctx.agents.get(guardTarget)?.status !== 'running' && Date.now() < runningDeadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20))
   }
-  assert.equal(ctx.agents.get(slowId)?.status, 'running', 'slow child must be running before interrupt')
-  await call('interrupt_agent', { agent_id: slowId })
-  const interruptedWait = await call('wait_subagent', { subagent_id: [slowId] })
-  assert.match(interruptedWait, new RegExp(`subagent ${slowId} done \\(aborted\\)`))
+  assert.equal(ctx.agents.get(guardTarget)?.status, 'running', 'guarded child must be running before the parent turn')
+  const parentTurnEnded = new Promise((resolveTurn, rejectTurn) => {
+    const timer = setTimeout(() => { off(); rejectTurn(new Error('parent turn did not finish')) }, 20_000)
+    const off = ctx.on('session/event', (session, event) => {
+      if (session.id !== agent.id || event.type !== 'turn/end') return
+      clearTimeout(timer)
+      off()
+      resolveTurn(event)
+    })
+  })
+  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Finish the guarded parent turn.' }], source: { kind: 'user' } }))
+  await parentTurnEnded
+  await agent.whenIdle()
+  assert.equal(guardSeen, true, 'the child exit guard notice reached the model inside the turn')
+  const turnLease = await ctx.sessionQuery.observeSession(agent.id)
+  const guardNotice = turnLease.events.find((event) => event.type === 'user/message'
+    && event.data?.source?.kind === 'better-subagent-child-exit-guard')
+  disposeLease(turnLease)
+  assert.ok(guardNotice, 'the guard notice is durably logged in the parent session')
+  const guardedWait = await call('wait_subagent', { subagent_id: [guardTarget] })
+  assert.match(guardedWait, new RegExp(`subagent ${guardTarget} done \\(aborted\\)`))
 
-  // The parent agent's own inbox was never touched by wait_subagent: it can
-  // still finish a normal turn and go idle.
-  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Parent smoke turn.' }], source: { kind: 'user' } }))
+  // ── an unguarded parent turn with no running children finishes normally ──
+  agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Plain parent turn.' }], source: { kind: 'user' } }))
   await agent.whenIdle()
 
   const result = {
@@ -189,12 +313,16 @@ try {
       'real-profile-boot',
       'host-plane-wait-subagent',
       'per-agent-prompt-sections',
+      'settings-projection-and-hot-volatile-update',
+      'real-webserver-canonical-and-apollo-route',
       'native-create-wait',
+      'settlement-notice-carries-closing-content',
       'continue-wait',
+      'child-exit-guard-real-turn-stopping',
       'interrupt-wait',
       'no-external-cli',
     ],
-    cliE2E: 'not-run (no codex/claude credentials asserted)',
+    cliE2E: 'not-run here (scripts/cli-smoke.mjs covers it)',
   }
   await writeFile(join(home, 'results.json'), JSON.stringify(result, null, 2))
   console.log('BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED', JSON.stringify(result))

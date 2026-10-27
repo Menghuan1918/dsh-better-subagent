@@ -1,29 +1,36 @@
 /**
- * Real Claude CLI end-to-end smoke (optional; needs an authenticated `claude`).
+ * Real Claude/Codex CLI end-to-end smoke (optional; needs an authenticated CLI).
  *
- * Boots an isolated headless profile with this package installed, enables the
- * Claude CLI backend in the row config, and drives the managed CLI child through
- * the real host tools:
+ * Boots an isolated headless profile with this package installed, enables one
+ * CLI backend in the row config, and drives the managed CLI child through the
+ * real host tools, including a real process restart:
  *
- *   create → wait_subagent → send_message continue → wait_subagent →
+ *   create → wait_subagent → (flush + dispose host) → boot again → resume the
+ *   parent Agent → send_message (cold CLI resume) → wait_subagent →
  *   send_message again → interrupt_agent → wait_subagent
  *
- * This starts the real `claude` binary (plan permission mode, no tools) three
- * times and therefore consumes a little Claude quota. It never touches the
- * repository and keeps the DSH profile in a temp directory; the CLI's own
- * native session/credential home stays the user's, because changing
- * CLAUDE_CONFIG_DIR would change Claude's keychain lookup and lose auth.
+ * The restart leg is the in-repo two-process resume evidence: the CLI identity
+ * KV (`apollo_cli_<hash>` per-record JSON under the temp DSH_HOME) is reopened
+ * by a fresh host process and the same durable child continues through its
+ * native CLI session.
+ *
+ * This starts the real CLI binary (plan/read-only permission, no tools) a few
+ * times and therefore consumes a little quota. It never touches the repository
+ * and keeps the DSH profile in a temp directory; the CLI's own native
+ * session/credential home stays the user's, because changing CLAUDE_CONFIG_DIR
+ * would change Claude's keychain lookup and lose auth.
  *
  * Run:
  *   DSH_PACKAGE_ROOT="/…/node_modules/@deepseek-ai/dsh" node scripts/cli-smoke.mjs [claude|codex]
  */
 
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile, cp, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dsh = process.env.DSH_PACKAGE_ROOT
@@ -65,40 +72,47 @@ await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([
 const { runProfile } = await import(pathToFileURL(join(dsh, 'lib/profile-boot.js')))
 const work = join(home, 'work')
 await mkdir(work, { recursive: true })
+
+const parentAdapter = {
+  providerInfo: (id) => ({ id, name: 'Better Subagent CLI smoke parent adapter' }),
+  providerRetryPolicy: () => undefined,
+  imageRequestPricing: () => undefined,
+  listModels: async () => [{ provider: 'it-noop', id: 'noop', name: 'Noop', inputModalities: ['text'] }],
+  resolveModel: async (provider, id) => ({ provider, id, name: id, inputModalities: ['text'] }),
+  async prepareCall(provider, id) { return { model: await parentAdapter.resolveModel(provider, id), stream: () => parentAdapter.stream() } },
+  async *stream() {
+    yield { type: 'block-start', index: 0, blockType: 'text' }
+    yield { type: 'text-delta', index: 0, text: 'Parent smoke response.' }
+    yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Parent smoke response.' } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  },
+}
+
 let ctx
-try {
+let agent
+const call = async (name, args) => {
+  assert.ok(ctx.tools.get(name, agent), `${name} must be visible`)
+  const result = await ctx.tools.execute({ name, arguments: args, agent, signal: new AbortController().signal, callId: randomUUID() })
+  assert.equal(result.isError, false, `${name} failed: ${JSON.stringify(result.error ?? result.content)}`)
+  return result.value
+}
+
+async function boot() {
   const booted = await runProfile({ profile: 'it', patchFiles: [], args: [], environment: A.loadLayeredEnv('dsh') })
   ctx = booted.ctx
+  ctx.llm.registerAdapter(['it-noop'], parentAdapter)
+}
 
-  const adapter = {
-    providerInfo: (id) => ({ id, name: 'Better Subagent CLI smoke parent adapter' }),
-    providerRetryPolicy: () => undefined,
-    imageRequestPricing: () => undefined,
-    listModels: async () => [{ provider: 'it-noop', id: 'noop', name: 'Noop', inputModalities: ['text'] }],
-    resolveModel: async (provider, id) => ({ provider, id, name: id, inputModalities: ['text'] }),
-    async prepareCall(provider, id) { return { model: await adapter.resolveModel(provider, id), stream: () => adapter.stream() } },
-    async *stream() {
-      yield { type: 'block-start', index: 0, blockType: 'text' }
-      yield { type: 'text-delta', index: 0, text: 'Parent smoke response.' }
-      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'Parent smoke response.' } }
-      yield { type: 'finish', reason: { kind: 'stop' } }
-    },
-  }
-  ctx.llm.registerAdapter(['it-noop'], adapter)
-
+try {
+  await boot()
+  const parentId = randomUUID()
   const created = await ctx.agents.create({
-    sessionId: randomUUID(),
+    sessionId: parentId,
     meta: { cwd: work },
     agentOptions: { provider: 'it-noop', model: 'noop' },
     setup: async () => {},
   })
-  const agent = created.agent
-  const call = async (name, args) => {
-    assert.ok(ctx.tools.get(name, agent), `${name} must be visible`)
-    const result = await ctx.tools.execute({ name, arguments: args, agent, signal: new AbortController().signal, callId: randomUUID() })
-    assert.equal(result.isError, false, `${name} failed: ${JSON.stringify(result.error ?? result.content)}`)
-    return result.value
-  }
+  agent = created.agent
 
   // The synthetic CLI route must be registered with an allowlisted model.
   const route = cli === 'codex' ? 'apollo-cli-codex' : 'apollo-cli-claude'
@@ -115,13 +129,45 @@ try {
   const childId = first.subagentId
   const firstWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(firstWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
+  await agent.whenIdle()
 
-  // 2) continue the same durable child (native session resume), wait for turn two.
+  // The durable identity lives in the real per-record JSON store.
+  const namespace = `apollo_cli_${createHash('sha256').update(dir).digest('hex').slice(0, 16)}`
+  const recordPath = join(home, 'storages', namespace, 'sessions', `${childId}.json`)
+  assert.equal(existsSync(recordPath), true, `CLI identity record exists on disk: ${recordPath}`)
+  const recordText = await readFile(recordPath, 'utf8')
+  assert.match(recordText, /"remoteId"/, 'the stored identity is the resumable CLI session id')
+
+  // 2) real host restart: flush + dispose, boot a fresh process-ish runtime on
+  // the same profile/DSH_HOME, resume the parent, then continue the child.
+  await ctx.sessions.flush(agent.session)
+  await ctx.fiber.dispose()
+  ctx = undefined
+  await boot()
+  const resumed = await ctx.agents.resume({
+    resumeSessionId: parentId,
+    agentOptions: { provider: 'it-noop', model: 'noop' },
+    setup: async () => {},
+  })
+  agent = resumed.agent
+  assert.equal(agent.status, 'idle')
+  assert.ok(existsSync(recordPath), 'the reopened host sees the same per-record identity file')
+  const reopened = await readFile(recordPath, 'utf8')
+  const remoteId = /"remoteId":\s*"([^"]+)"/.exec(reopened)?.[1]
+  assert.equal(typeof remoteId, 'string', 'the resumable CLI session id survived the restart')
+
+  // 3) continue the same durable child after restart (cold CLI resume).
   await call('send_message', { agent_id: childId, message: 'Reply with exactly the text: SMOKE TWO' })
   const secondWait = await call('wait_subagent', { subagent_id: [childId] })
   assert.match(secondWait, new RegExp(`subagent ${childId} done \\(completed\\)`))
+  await agent.whenIdle()
+  assert.equal(
+    /"remoteId":\s*"([^"]+)"/.exec(await readFile(recordPath, 'utf8'))?.[1],
+    remoteId,
+    'a resume must not replace the stored CLI session identity',
+  )
 
-  // 3) start a turn and interrupt it while the CLI process is running.
+  // 4) start a turn and interrupt it while the CLI process is running.
   await call('send_message', { agent_id: childId, message: 'Count slowly from 1 to 100 in separate lines.' })
   const deadline = Date.now() + 30_000
   while (ctx.agents.get(childId)?.status !== 'running' && Date.now() < deadline) {
@@ -142,7 +188,10 @@ try {
       'real-profile-boot',
       'cli-route-registered',
       'real-cli-create-wait',
-      'real-cli-continue-wait',
+      'real-storage-identity-record',
+      'host-restart-and-parent-resume',
+      'kv-reopen-and-cold-cli-resume',
+      'remote-id-stable-across-resume',
       'real-cli-interrupt-wait',
       'host-plane-wait-subagent',
     ],
