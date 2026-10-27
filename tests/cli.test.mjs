@@ -19,6 +19,7 @@ import { Readable } from 'node:stream'
 import { MAX_ERROR_CHARS, readJsonLines, sanitizeError } from '../src/cli/jsonl.js'
 import { buildCommand as buildCodexCommand, createParser as createCodexParser } from '../src/cli/codex.js'
 import { buildCommand as buildClaudeCommand, createParser as createClaudeParser } from '../src/cli/claude.js'
+import { CLI_MIN_LABELS, assertCliVersion, parseCliVersion, probeCliVersion, versionAtLeast } from '../src/cli/version.js'
 
 // 合成 fixture 标识：保留 UUID / profile 的形状，但与任何真机会话无关。
 const CODEX_THREAD_ID = '11111111-1111-4111-8111-111111111111'
@@ -480,4 +481,52 @@ test('claude parser: 非事件输入被忽略，失败错误文本有界且去�
   assert.ok(action.error.length <= MAX_ERROR_CHARS + 1)
   assert.ok(!action.error.includes('sk-abcdefghijklmnopqrstuv'))
   assert.match(action.error, /api_error_status=401/)
+})
+
+
+// ─────────────────────────── CLI 版本预检 ───────────────────────────
+
+test('version: parseCliVersion 从 codex/claude 输出提取首个语义版本', () => {
+  assert.deepEqual(parseCliVersion('codex-cli 0.164.0'), [0, 164, 0])
+  assert.deepEqual(parseCliVersion('2.1.309 (Claude Code)'), [2, 1, 309])
+  assert.deepEqual(parseCliVersion('v1.2.3\nextra'), [1, 2, 3])
+  assert.equal(parseCliVersion(''), undefined)
+  assert.equal(parseCliVersion(undefined), undefined)
+  assert.equal(parseCliVersion('no version here'), undefined)
+})
+
+test('version: versionAtLeast 精确比较 major/minor/patch', () => {
+  assert.equal(versionAtLeast([0, 162, 1], [0, 162, 1]), true)
+  assert.equal(versionAtLeast([0, 164, 0], [0, 162, 1]), true)
+  assert.equal(versionAtLeast([1, 0, 0], [0, 999, 999]), true)
+  assert.equal(versionAtLeast([0, 161, 9], [0, 162, 1]), false)
+  assert.equal(versionAtLeast([0, 162, 0], [0, 162, 1]), false)
+  assert.equal(versionAtLeast([2, 0, 999], [2, 1, 300]), false)
+})
+
+test('version: assertCliVersion 接受基线以上、拒绝过旧与不可解析输出', () => {
+  assert.equal(assertCliVersion('codex', 'codex-cli 0.164.0'), '0.164.0')
+  assert.equal(assertCliVersion('claude', '2.1.309 (Claude Code)'), '2.1.309')
+  assert.throws(() => assertCliVersion('codex', 'codex-cli 0.160.0'), /requires codex 0\.162\.1 or newer \(found 0\.160\.0\)/)
+  assert.throws(() => assertCliVersion('claude', '2.0.9'), /requires claude 2\.1\.300 or newer/)
+  assert.throws(() => assertCliVersion('claude', 'unknown'), /could not recognize the claude version/)
+  assert.throws(() => assertCliVersion('other', '1.0.0'), /no version baseline/)
+  assert.equal(CLI_MIN_LABELS.codex, '0.162.1')
+  assert.equal(CLI_MIN_LABELS.claude, '2.1.300')
+})
+
+test('version: probeCliVersion 运行真实 --version 脚本且失败时 reject', async () => {
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'better-subagent-version-'))
+  try {
+    const path = join(dir, 'fake-cli')
+    writeFileSync(path, '#!/bin/sh\nprintf "fake-cli 9.8.7\\n"\n')
+    chmodSync(path, 0o755)
+    assert.match(await probeCliVersion(path), /9\.8\.7/)
+    await assert.rejects(() => probeCliVersion(join(dir, 'missing')), /ENOENT/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

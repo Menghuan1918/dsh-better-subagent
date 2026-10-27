@@ -106,7 +106,7 @@ function makeSessions(initial = {}) {
 }
 
 /** 捕获 guard / execute / systemPrompt 段 / tools/result 的 fake ctx。 */
-function makeCtx({ subagents = {}, agents = {}, subprocess = {}, workingDirectory = makeWorkingDirectory(), logger } = {}) {
+function makeCtx({ subagents = {}, agents = {}, subprocess = {}, workingDirectory = makeWorkingDirectory(), cliVersionProbe, logger } = {}) {
   const guards = []
   const handlers = new Map()
   const handlersOf = new Map()
@@ -140,6 +140,10 @@ function makeCtx({ subagents = {}, agents = {}, subprocess = {}, workingDirector
       resolveExecutable: async (command) => { resolved.push(command); return `/resolved/${command}` },
       ...subprocess,
     },
+    // Version preflight seam: tests never execute a real CLI.
+    cliVersionProbe: cliVersionProbe ?? (async (executable) => String(executable).includes('claude')
+      ? '2.1.309 (Claude Code)'
+      : 'codex-cli 0.164.0'),
     logger: logger ?? { warn: (text) => warnings.push(String(text)) },
   }
   return ctx
@@ -676,6 +680,59 @@ test('可执行预检：预检期间被中断 → 抛 AbortError（不是「可�
         throw new Error('aborted')
       },
     },
+  })
+  const sessions = makeSessions()
+  await assert.rejects(
+    () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'codex', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: controller.signal }),
+    (error) => error.name === 'AbortError',
+  )
+  assert.deepEqual(sessions.calls, [])
+})
+
+test('版本预检：低于测试基线 → 可操作错误，且不落 KV、不调用 manager', async () => {
+  let created = 0
+  const ctx = makeCtx({
+    subagents: { startActivation: async () => { created += 1; return { childId: 'x', messageId: 'm' } } },
+    cliVersionProbe: async () => 'codex-cli 0.150.0',
+  })
+  const sessions = makeSessions()
+  await assert.rejects(
+    () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'codex', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: new AbortController().signal }),
+    /requires codex 0\.162\.1 or newer \(found 0\.150\.0\)/,
+  )
+  assert.equal(created, 0)
+  assert.deepEqual(sessions.calls, [])
+})
+
+test('版本预检：无法识别的版本输出 → 可操作错误，不落 KV', async () => {
+  const ctx = makeCtx({ cliVersionProbe: async () => 'no version here' })
+  const sessions = makeSessions()
+  await assert.rejects(
+    () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'claude', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: new AbortController().signal }),
+    /could not recognize the claude version/,
+  )
+  assert.deepEqual(sessions.calls, [])
+})
+
+test('版本预检：执行 --version 失败 → 可操作错误（含安装提示），不落 KV', async () => {
+  let created = 0
+  const ctx = makeCtx({
+    subagents: { startActivation: async () => { created += 1; return { childId: 'x', messageId: 'm' } } },
+    cliVersionProbe: async () => { throw Object.assign(new Error('spawn EACCES'), { code: 'EACCES' }) },
+  })
+  const sessions = makeSessions()
+  await assert.rejects(
+    () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'codex', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: new AbortController().signal }),
+    /version check failed .*install codex 0\.162\.1 or newer/,
+  )
+  assert.equal(created, 0)
+  assert.deepEqual(sessions.calls, [])
+})
+
+test('版本预检：探测期间被中断 → 抛 AbortError，不落 KV', async () => {
+  const controller = new AbortController()
+  const ctx = makeCtx({
+    cliVersionProbe: async () => { controller.abort(); throw new Error('aborted') },
   })
   const sessions = makeSessions()
   await assert.rejects(

@@ -16,6 +16,7 @@ import { join, isAbsolute, resolve } from 'node:path'
 import { normalizeConfig } from './config.js'
 import { CLI_DISPLAY_NAMES, CLI_ROUTES, createCliAdapter, enabledIn, selectCli } from './cli-adapter.js'
 import { openCliSessions } from './cli-sessions.js'
+import { CLI_MIN_LABELS, assertCliVersion, probeCliVersion } from './cli/version.js'
 
 const CLI_NAMES = Object.keys(CLI_ROUTES)
 const cliName = (provider) => CLI_NAMES.includes(provider) ? provider : undefined
@@ -77,8 +78,21 @@ export async function startCliSubagent(ctx, config, sessions, args, exec) {
     executable = await ctx.subprocess.resolveExecutable(command, undefined, exec.signal)
   } catch (error) {
     exec.signal.throwIfAborted()
-    throw new Error(`Better Subagent ${cli} executable is unavailable; set its absolute path in Plugins → Better Subagent`, { cause: error })
+    throw new Error(`Better Subagent ${cli} executable is unavailable; install ${cli} ${CLI_MIN_LABELS[cli]} or newer, make sure it is on PATH, or set its absolute path in Plugins → Better Subagent`, { cause: error })
   }
+  // Version preflight before any durable identity exists: an installed but
+  // incompatible CLI must fail with an actionable diagnostic, not fail later
+  // mid-turn or fall back to another backend.
+  const probe = ctx.cliVersionProbe ?? probeCliVersion
+  let versionOutput
+  try {
+    versionOutput = await probe(executable, { signal: exec.signal })
+  } catch (error) {
+    exec.signal.throwIfAborted()
+    throw new Error(`Better Subagent ${cli} version check failed (${executable}); install ${cli} ${CLI_MIN_LABELS[cli]} or newer and make sure \`${cli} --version\` works, or set its absolute path in Plugins → Better Subagent`, { cause: error })
+  }
+  exec.signal.throwIfAborted()
+  assertCliVersion(cli, versionOutput)
   const id = randomUUID()
   const record = {
     version: 1, id, parentId: parent.id, cli, cwd,
