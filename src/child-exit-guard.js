@@ -43,9 +43,10 @@ export function buildChildGuardMessage(children) {
   return {
     role: 'user',
     content: [{ type: 'text', text }],
+    // Producer-owned source kind: native session format v4 refuses the retired
+    // `{kind:'plugin', plugin}` wrapper shape for newly appended messages.
     source: {
-      kind: 'plugin',
-      plugin: name,
+      kind: name,
       form: 'notice',
       summary: `运行中的子代理阻止回合结束（${children.length}）`,
     },

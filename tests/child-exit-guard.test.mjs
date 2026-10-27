@@ -72,8 +72,8 @@ test('running direct child → one steer notice with id, label and wait guidance
     assert.equal(steered.length, 1)
     const [message] = steered
     assert.equal(message.role, 'user')
-    assert.equal(message.source.kind, 'plugin')
-    assert.equal(message.source.plugin, 'better-subagent-child-exit-guard')
+    assert.equal(message.source.kind, 'better-subagent-child-exit-guard')
+    assert.equal(Object.hasOwn(message.source, 'plugin'), false)
     assert.equal(typeof message.id, 'string')
     const text = message.content[0].text
     assert.match(text, /child-1/)
