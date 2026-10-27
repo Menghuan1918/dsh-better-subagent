@@ -23,6 +23,24 @@ const cliName = (provider) => CLI_NAMES.includes(provider) ? provider : undefine
 const internalRoute = (provider) => Object.values(CLI_ROUTES).includes(provider)
 const success = (value) => ({ isError: false, value, content: [] })
 
+/**
+ * Read the optional version-probe seam without requiring an inject declaration.
+ * The real host context throws on a bare unknown property; tests may expose it
+ * as a plain function.
+ * @param ctx - runtime context.
+ * @returns a `(executable, options) => Promise<string>` probe.
+ */
+function versionProbeOf(ctx) {
+  try {
+    const probe = ctx.get?.('cliVersionProbe')
+    if (typeof probe === 'function') return probe
+  } catch { /* optional service not visible */ }
+  try {
+    if (typeof ctx.cliVersionProbe === 'function') return ctx.cliVersionProbe
+  } catch { /* property access requires inject in this composition */ }
+  return probeCliVersion
+}
+
 export function cliCatalog(config, request = {}) {
   const providers = CLI_NAMES.filter((cli) => normalizeConfig(config).subagents[cli].enabled)
   if (request.provider === undefined) return providers.map((cli) => `${cli} — ${CLI_DISPLAY_NAMES[cli]} CLI (background continuable subagents)`).join('\n')
@@ -83,7 +101,7 @@ export async function startCliSubagent(ctx, config, sessions, args, exec) {
   // Version preflight before any durable identity exists: an installed but
   // incompatible CLI must fail with an actionable diagnostic, not fail later
   // mid-turn or fall back to another backend.
-  const probe = ctx.cliVersionProbe ?? probeCliVersion
+  const probe = versionProbeOf(ctx)
   let versionOutput
   try {
     versionOutput = await probe(executable, { signal: exec.signal })
