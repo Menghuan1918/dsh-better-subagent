@@ -15,7 +15,11 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { CliSessions, openCliSessions } from '../src/cli-sessions.js'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { JsonStorageBackend } from '@deepseek-ai/dsh-storage-json'
+import { CliSessions, KV_NAMESPACE_PREFIX, openCliSessions } from '../src/cli-sessions.js'
 
 // ── fake 存储介质 ────────────────────────────────────────────────────────────
 // medium: name -> Map(key -> value)，跨 open/close 存活，模拟磁盘上的 per-record 目录。
@@ -267,4 +271,83 @@ test('close：已落盘的记录在 close 后仍然可读（读走内存副本�
   await sessions.put(record())
   await sessions.close()
   assert.equal(sessions.get('child-1').id, 'child-1')
+})
+
+
+// ── E. 真实 JSON storage backend：跨 open/close 的 per-record KV 重开 ────────
+// 这里直接使用宿主发行的 @deepseek-ai/dsh-storage-json（本包 peer），不是 fake：
+// 同一磁盘目录上关闭并重开 backend/unit，验证 apollo_cli_* 命名空间、version 1、
+// sessions 表与 per-record 布局能读回 started/remoteId/delivered 等恢复字段。
+
+function realStorageCtx(backend, profileDir) {
+  return {
+    get: (name) => (name === 'profileContext' ? { dir: profileDir } : undefined),
+    storage: { backend: { get: (name) => (name === 'json' ? backend : undefined) } },
+  }
+}
+
+test('真实 JSON backend：per-record KV 关闭重开后读回同一记录（含恢复字段）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'better-subagent-kv-'))
+  try {
+    const firstBackend = new JsonStorageBackend(dir)
+    const first = await openCliSessions(realStorageCtx(firstBackend, '/profiles/web'))
+    await first.put(record({
+      started: true,
+      remoteId: 'thread-real-9',
+      delivered: ['m1'],
+      cliHome: '/tmp/claude-home',
+      claudeDefaultHome: true,
+      profile: '',
+      cli: 'claude',
+      executable: 'claude',
+      model: 'sonnet',
+    }))
+    const namespace = first.unit.descriptor.name
+    assert.match(namespace, /^apollo_cli_[0-9a-f]{16}$/)
+    await first.close()
+    await firstBackend.close()
+
+    // The authoritative medium is the per-record tree, not memory.
+    assert.equal(existsSync(join(dir, namespace, 'sessions', 'child-1.json')), true)
+
+    const secondBackend = new JsonStorageBackend(dir)
+    const second = await openCliSessions(realStorageCtx(secondBackend, '/profiles/web'))
+    const loaded = second.get('child-1')
+    assert.equal(loaded.started, true)
+    assert.equal(loaded.remoteId, 'thread-real-9')
+    assert.deepEqual(loaded.delivered, ['m1'])
+    assert.equal(loaded.cli, 'claude')
+    assert.equal(loaded.cliHome, '/tmp/claude-home')
+    assert.equal(loaded.claudeDefaultHome, true)
+    // Resume-like delivery write, then reopen once more.
+    await second.put({ ...loaded, delivered: ['m1', 'm2'] })
+    await second.close()
+    await secondBackend.close()
+
+    const thirdBackend = new JsonStorageBackend(dir)
+    const third = await openCliSessions(realStorageCtx(thirdBackend, '/profiles/web'))
+    assert.deepEqual(third.get('child-1').delivered, ['m1', 'm2'])
+    assert.equal(third.get('child-1').remoteId, 'thread-real-9')
+    await third.close()
+    await thirdBackend.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('真实 JSON backend：不同 profile dir 的命名空间互不串记录', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'better-subagent-kv-'))
+  try {
+    const backend = new JsonStorageBackend(dir)
+    const web = await openCliSessions(realStorageCtx(backend, '/profiles/web'))
+    await web.put(record({ remoteId: 'web-thread' }))
+    await web.close()
+    const desktop = await openCliSessions(realStorageCtx(backend, '/profiles/desktop'))
+    assert.equal(desktop.get('child-1'), undefined, 'a different profile dir must use a different apollo_cli_ namespace')
+    await desktop.close()
+    await backend.close()
+    assert.match(KV_NAMESPACE_PREFIX, /^apollo_cli_$/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
