@@ -24,6 +24,7 @@
 - 不允许再插入 agent preset 行；本插件不提供 preset。
 - 行 `Config` 在 `src/config.js`，由 `src/index.js` 重新导出。volatile 字段：`childExitGuard`、`tiers.fast/quality`、`subagents.eng/global`、`subagents.codex.*`、`subagents.claude.*`；`trustedHosts` 是普通部署字段（改动重挂本行）。
 - `normalizeConfig` 会把任意来源（volatile 引用、旧 JSON、残缺对象）规整成精确默认形状；非法值回退默认、绝不抛错。`currentConfig(ctx, fallback)` 经 `configEditor` 找**活**行配置；找不到时回退 `fallback`。
+- **命名偏差**：S1 Spec 的 unscoped 名 `dsh-better-subagent` 已被他人占用，经用户批准改用 scoped 包名 `@menghuan1918/dsh-better-subagent`；行 id 仍是 `dsh-better-subagent`，行 name 与 client closure id 必须是 scoped 包名，短键 `dsh-better-subagent#dsh-better-subagent` 只作兼容别名保留。
 - 行配置键（浏览器半边 `plugins.row.config`）四份，全部指向同一行：
   - `@menghuan1918/dsh-better-subagent#dsh-better-subagent`
   - `@menghuan1918/dsh-apollo#dsh-better-subagent`
@@ -52,7 +53,7 @@
   - `ctx.tools.guard`：内部 route 保留、禁用范围明确拒绝、fork 拒绝；
   - `ctx.tools.execute`：`subagent` + `provider=codex|claude` 短路创建；`list_subagent_models` 合并 CLI 目录；
   - `ctx.on('tools/result')`：未被调用方接受的 child 回收（drain + 删 KV）。
-- 创建流程：模型/effort 白名单校验 → 父当前目录解析（`workingDirectory.ensure`）→ `resolveExecutable` 预检 → 先落 KV 再 `startActivation` → 失败/取消 drain + 删记录。
+- 创建流程：模型/effort 白名单校验 → 父当前目录解析（`workingDirectory.ensure`）→ `resolveExecutable` 预检 → `<executable> --version` 版本预检（`src/cli/version.js`：Codex 基线 `0.162.1`，Claude 基线 `2.1.300`；无法执行/无法识别/过旧都给出点名可执行文件与安装/升级方式的可操作错误）→ 先落 KV 再 `startActivation` → 失败/取消 drain + 删记录。`ctx.cliVersionProbe` 是测试 seam；真实运行时用 `execFile`，无 shell。
 - 每个 adapter：一轮一个子进程；`delivered` 在 spawn 前落 KV；`remoteId` 第一行事件即落盘；`parse` 失败/非零退出/缺完成标志都抛错且不自动重试；`dispose()` 等待进程句柄退出。没有 `subprocess` 服务或 spawn 未发布时回滚 `started/delivered`。
 - 身份 KV（`src/cli-sessions.js`）：命名空间前缀 `apollo_cli_` + `sha256(profile.dir)[:16]`，version 1，`sessions` 表，`per-record`。**包名变化不重命名/复制/清空**。
 - 权限/模型/effort 与父子归属在启动前失败；缺 CLI 或版本不兼容给可操作诊断，不回退到另一后端。
@@ -65,11 +66,12 @@
 
 1. 监听 `subagent/start` / `subagent/end`，记录每个 child 最近的 activation `runId`；
 2. `status === 'running'` → 继续等待；
-3. 读子会话 durable 日志（`ctx.sessionQuery.observeSession(childId)`），取最后一次 `agent/inbox/spliced`（`inserted.length > 0`）与最后一次 `turn/end` 的 seq；
-4. 仅当「最后一次 end 的 runId 与最后一次 start 匹配（或挂载后只见到 end）」**且**「`lastInsert <= lastTurnEnd`」才返回 done；
-5. `lastInsert > lastTurnEnd`（排队输入尚未被回合消费）、新 start 与旧 end 不匹配、状态 running → 继续等；
-6. durable 状态不可读 → `could not be confirmed`，不伪报成功；start 宽限 30s 后仍无法证明 → not-started/不可确认行；
-7. child 已不在 registry 且 durable 状态证明无排队输入 → 可立即返回“已在此次等待前结束”的说明（不是旧 done）。
+3. 匹配 end：最近一次 end 的 runId 与最近一次 start 相同（或挂载后只见到 end）。不匹配（新 activation）→ 继续等；
+4. 匹配 end 后再读 durable 日志（`ctx.sessionQuery.observeSession(childId)`）：只 fold `inheritedEventCount` 之后的**子代理自有**事件（fork 前缀的父 turn/end、splice 不属于该 child）；
+5. fold `agent/inbox/spliced` 的 `inserted`/`removedCount`/`outcome:'canceled'`，按 target（`next-turn`/`next-step`）维护队列长度：turn claim（`removedCount` 无 outcome）与取消删除都会清掉排队计数；`pending = nextTurn + nextStep > 0`；
+6. 匹配 end + `pending > 0` → 继续等（resident idle child 收到新输入时没有新 `subagent/start`，这是唯一的当前回合证明）；`pending === 0` → done；
+7. durable 不可读：child 已不在 registry → 用 start/end 对 settle（external provider 可能没有本地 DSH 会话）；child 仍 live → `could not be confirmed`，不伪报成功；
+8. 无 end 时：`pending > 0` 继续等；不在 registry 且自有日志有 `turn/end` → “已在此次等待前结束”的说明（不是旧 done）；30s 启动宽限后仍无法证明 → not-started/不可确认行。
 
 输出行保持旧契约：done/timeout/aborted/not-started/不可确认；正文交给框架 settlement notice，工具不碰父代理 inbox。
 
@@ -100,7 +102,8 @@ preset 解析优先 `agentPresets.composedPreset(agent.ctx)`，回退 `sessionPr
 - `registerCapabilitiesRoute` 一次注册两个 prefix：`/better-subagent/api` 与 `/apollo/api`，共享同一 handler；`settings.js` 只注册一次。
 - 路由：`/capabilities`、`/models?cli=codex|claude`、`/routes`；GET only；未知路径 404；非 GET 405；不读请求体。
 - 信任边界：loopback 或 `trustedHosts`；拒绝跨站 `Sec-Fetch-Site` 与异源 Origin。`trustedHosts` 每请求读活配置。
-- 发现：Codex `codex debug models`（失败回退 `--bundled`）；Claude 读 `ANTHROPIC_BASE_URL`/凭据并请求 `/v1/models`。只在显式调用时触发，30s 缓存；响应不回凭据，只回可执行文件路径/版本、profile 名、模型 id/effort。
+- 能力探针：30s 有界缓存 + 并发去重。发现：Codex `codex debug models`（失败回退 `--bundled`）；Claude 读 `ANTHROPIC_BASE_URL`/凭据并请求 `/v1/models`。发现只在显式调用时触发（不做后台缓存/重探）；响应不回凭据，只回可执行文件路径/版本、profile 名、模型 id/effort。
+- `trustedHosts` 只约束本插件的读接口，不改变宿主设置镜像的可写性。
 
 ## 9. 客户端设置页（`src/client.js`）
 
@@ -109,7 +112,7 @@ preset 解析优先 `agentPresets.composedPreset(agent.ctx)`，回退 `sessionPr
 - 可写字段只包含 volatile 路径；`writable === false` / `mode === 'memory'` 全禁用；冲突（mutate 返回 false）回退宿主值并提示；异常保留草稿。
 - 四份 `plugins.row.config` 键注册同一个组件；locale 命名空间 `better-subagent`（zh/en 字典键一致）。
 - 表单覆盖：scope（eng/global）、fast/quality 分档（路由 + effort）、两个后端（enabled/executable/profile/permission/defaultModel/models + 自动发现）、childExitGuard。
-- 校验：模型 id 非空且唯一；启用的后端必须有模型、默认模型与默认 effort；白名单读到时已存分档路由必须在白名单内。已存但不在候选中的值保留并标注，不静默改值。
+- 校验：模型 id 非空且唯一；启用的后端必须有模型、默认模型与默认 effort；白名单读到时已存分档路由必须在白名单内。已存但不在候选中的值保留并标注，不静默改值。分档本身只是提示词建议，实际子代理路由仍由宿主模型选择策略决定。
 
 ## 10. 验证
 
@@ -121,13 +124,14 @@ npm test
 # 真实宿主（headless，无需 CLI 凭据）：原生 subagent create→wait→continue→wait→interrupt→wait
 DSH_PACKAGE_ROOT="/path/to/dependencies/dsh/node_modules/@deepseek-ai/dsh" npm run smoke
 
-# 真实 Claude CLI（需要已登录；会消耗少量额度）
+# 真实 Claude CLI（需要已登录；会消耗少量额度；含真实宿主重启 + KV 重开 + cold resume）
 DSH_PACKAGE_ROOT="/path/to/dependencies/dsh/node_modules/@deepseek-ai/dsh" node scripts/cli-smoke.mjs claude
 
 # 真实 Codex CLI（需要 `codex login`；当前机器未登录时不可用）
 DSH_PACKAGE_ROOT="/path/to/dependencies/dsh/node_modules/@deepseek-ai/dsh" node scripts/cli-smoke.mjs codex
 
 npm pack --dry-run --json
+npm ci --dry-run
 ```
 
 测试目录：
@@ -136,7 +140,7 @@ npm pack --dry-run --json
 |---|---|
 | `tests/config.test.mjs` | 默认形状、volatile 集合、normalize 去重/回退/展开、活配置读取、settings 投影契约 |
 | `tests/cli.test.mjs` | JSONL 切行/多字节/错误去敏、Codex/Claude argv 精确构造与事件语义 |
-| `tests/cli-sessions.test.mjs` | KV 命名空间 `apollo_cli_*`、descriptor、校验、串行写、重开/关闭 |
+| `tests/cli-sessions.test.mjs` | KV 命名空间 `apollo_cli_*`、descriptor、校验、串行写、重开/关闭；真实 `@deepseek-ai/dsh-storage-json` per-record 重开/跨 profile 隔离 |
 | `tests/cli-adapter.test.mjs` | provider 元数据、早存 remoteId、resume、env snapshot、并发、坏 JSON/非零退出、中断、游标、归属、dispose、rollback |
 | `tests/subagents.test.mjs` | guard/路由、范围开关、fork/agent_preset/run_in_background 拒绝、白名单、降级、cwd、KV/预检/回收 |
 | `tests/wait-subagent.test.mjs` | 契约/批量/去重/直接子代理/fail-fast/超时下限/宽限/取消/inbox 零手术 + 跨回合回归 |
@@ -147,14 +151,14 @@ npm pack --dry-run --json
 | `tests/client.test.mjs` | 真实 React hooks/元素树：四个槽键、表单控件、保存/冲突/只读、发现、分档 |
 | `tests/assembly.test.mjs` | manifest、bundle patch、exports、client closure id/键、发布工作流、包白名单、NOTICE |
 
-真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`，CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`，并在临时 `DSH_HOME/results.json` 留下检查项。
+真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`（检查：真实 settings 投影/volatile 热更新、真实 webServer canonical+别名路由、结算通知正文、childExitGuard 真实 turn-stopping），CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`（检查：真实 CLI 创建/等待、身份记录落盘、宿主重启+父 Agent 恢复、KV 重开+cold CLI resume、remoteId 稳定、中断），并在临时 `DSH_HOME/results.json` 留下检查项。
 
 CLI smoke 会把 DSH profile 放在临时目录，但不会改 Claude/Codex 的原生 home（改 `CLAUDE_CONFIG_DIR` 会改变凭据/keychain 查找）；真实 CLI 自己的原生会话因此会留在该 CLI 的用户目录下，脚本不清理这些原生会话。
 
 ### 已知未验证项
 
 - Codex CLI 端到端：实现机 `codex login status` 为 `Not logged in`，属于凭据阻塞；测试替身只能证明 argv/解析/生命周期边界。
-- 从 npm 发布后的 `dsh plugin add` 与真实 Web GUI 点击：本仓库尚未发布；临时 profile 用同样的 scoped 安装布局 + `runProfile` 验证了加载。
+- 从 npm 发布后的 `dsh plugin add` 与真实 Web GUI 点击：本仓库尚未发布；临时 profile 用同样的 scoped 安装布局 + `runProfile` 验证了加载（含真实 webServer 路由与真实 settings 投影/写入）。
 - Apollo + 本插件组合运行与旧配置迁移：由 S4（Apollo 集成）负责并验证。
 
 ## 11. 迁移与边界
@@ -163,6 +167,7 @@ CLI smoke 会把 DSH profile 放在临时目录，但不会改 Claude/Codex 的�
 - 同时安装时：preset 作用域的同名工具会遮蔽宿主工具；`/apollo/api` 路由可能由 Apollo 与本插件各注册一次（webServer 的重复 (kind,path) 会抛错）——这是迁移窗口的已知状态，S4 删除 Apollo 旧实现后消失。不要在这个窗口里声称组合安装已完成验收。
 - 旧 `exitGuard` → `childExitGuard` 的映射归 S4；本插件只读自己的行配置，不读 `eng.json`/`atlas.json`。
 - 身份 KV 与内部 route 是兼容契约：不要为了包名/品牌改名。
+- 包名从 Spec 的 unscoped `dsh-better-subagent` 改为 scoped `@menghuan1918/dsh-better-subagent`（npm 名被他人占用，用户已批准）；行 id 与短槽键保留 `dsh-better-subagent`。
 
 ## 12. 发布
 

@@ -13,6 +13,8 @@
 
 > 目标宿主：DSH `>=0.2.1-rc.2 <0.3.0`；Node.js `^22.19.0 || >=24.0.0`。纯 ESM，无构建步骤。
 
+> **命名偏差**：S1 Spec 最初写的是 unscoped 包名/行名 `dsh-better-subagent`；该 npm 名已被其他发布者占用，经用户批准改为 scoped 包名 `@menghuan1918/dsh-better-subagent`。bundle 行 id 仍为 `dsh-better-subagent`，行 name 必须是 scoped 包名（Loader 把它当模块 specifier，client closure id 也必须等于它）；浏览器半边同时保留 S1 的 `dsh-better-subagent#dsh-better-subagent` 短键作兼容别名。
+
 ## 安装
 
 ### 独立安装（推荐的干净 profile）
@@ -50,7 +52,7 @@ Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份�
    设置页的「接入范围」里勾选「全部预设」（`subagents.global: true`），否则标准预设的会话看不到 CLI 子代理路由。eng 预设会话默认由 `subagents.eng: true` 覆盖。
 2. **启用一个可用后端**（例如 Claude）：
    - 勾选「启用」；
-   - 可执行文件保持 `claude`（从 PATH 解析）或填绝对路径；
+   - 可执行文件保持 `claude`（从 PATH 解析）或填绝对路径；创建子代理前会执行一次 `<cli> --version` 预检，低于测试基线（Codex `0.162.1` / Claude `2.1.300`）或无法识别版本会给出可操作错误，不会静默回退；
    - 权限档保持 `plan`（默认；不会继承父会话权限）；
    - 在「模型与 effort」里至少加一条模型，例如 `sonnet` + efforts `low, medium, high` + 默认 `low`，并把「默认模型」设为 `sonnet`；
    - 保存后即时生效，无需重启。
@@ -95,7 +97,7 @@ Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份�
 - 整批并发等待；`timeout_ms` 是整批共享窗口，低于 15 分钟会提升到 15 分钟。
 - 每个 id 一行：`done (stopReason)` / `timed out` / `aborted` / `has not started after 30s` / `could not be confirmed` / 已在此次等待前结束的状态说明。子代理正文仍由框架的 settlement notice 投递；本工具不排空、不改写、不重复转述父代理 inbox。
 - 刚刚创建、尚未开始运行的子代理有 30 秒启动宽限；宽限内不误报“没在运行”。
-- **跨回合**：只有满足下列条件才返回 done——最近一次 `subagent/end` 的 `runId` 与最近一次 `subagent/start` 匹配（或挂载后只观测到 end），且子会话 durable 日志里没有“最后一次 `agent/inbox/spliced` 晚于最后一次 `turn/end`”的排队输入。状态 `running` 一律继续等待。若 durable 状态不可读，返回 `could not be confirmed`，不伪报成功。
+- **跨回合**：`subagent/end` 必须与最近一次 `subagent/start` 的 `runId` 匹配（或挂载后只观测到 end）；匹配后仍会读子会话 durable 日志，把 `agent/inbox/spliced` 的插入/claim/取消删除折成“是否仍有排队输入”。`pending > 0` 时继续等待（resident idle 子代理没有新的 start，只能靠这条证明）；`pending == 0` 才 settle。继承的 fork 前缀事件（`inheritedEventCount` 之前）不计入子代理自己的回合。若 durable 状态不可读：子代理已不在 registry（如无本地 DSH 会话的 external provider）按匹配的 start/end 对 settle；仍有 live 子代理则返回 `could not be confirmed`，不伪报成功。状态 `running` 一律继续等待。
 
 ## 只读 API 与反向代理
 
@@ -110,7 +112,8 @@ Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份�
 
 - 只信任 loopback（`localhost` / `127.0.0.0/8` / `[::1]`）与 `trustedHosts` 列出的权威；拒绝 `Sec-Fetch-Site: cross-site` 与异源 `Origin`；只允许 GET（其他方法 405），从不读取请求体。
 - 这是 **DNS rebinding / 跨站调用防御**，不是登录认证。经反代域名访问 GUI 时，把该权威加入 `trustedHosts` 的后果上限是暴露本机可执行文件路径/版本、profile 名或模型清单。
-- 发现只在设置页显式点击时触发，带 30s 有界缓存；插件启动与页面重绘都不会探测 CLI 或网络。发现结果不代表当前会话实际可调用；已保存但不在候选中的值会保留并标注，不会被静默改掉。
+- `trustedHosts` **只影响本插件的只读 API**，不会把官方设置镜像从 memory/只读变成可写；设置页能否写入由宿主连接策略决定（`declareOwnsHost` 是宿主/Apollo 所有的部署标志，本插件已按 Spec 移除）。
+- 能力探针（`/capabilities`）带 30s 有界缓存；模型发现（`/models`）只在设置页显式点击时触发、不做后台缓存/重探。插件启动与页面重绘都不会探测 CLI 或网络。发现结果不代表当前会话实际可调用；已保存但不在候选中的值会保留并标注，不会被静默改掉。
 
 ## 持久身份与旧会话兼容
 
@@ -145,15 +148,16 @@ Apollo 的通用工程原则、完整工作流 skills、job/general 守卫措辞
 - 不支持 CLI 子代理的 `subagent_fork`（fork 永远走原生父路由/父上下文）；显式传 `agent_preset` 会明确失败；`run_in_background` 已从 CLI 子代理移除（它们始终后台运行）。
 - CLI 后端的模型/effort 白名单需要手工维护（或点“自动发现模型”），发现结果不等于本会话实际可调用。
 - 后端缺失或版本不兼容时给出可操作诊断，**不会**静默回退到另一种后端。
-- 独立安装时没有 host 的模型选择白名单 UI 也可以配置分档，但分档只是提示词委派建议，不绕过宿主白名单。
+- 分档只是提示词委派建议，不自行路由；实际子代理路由仍受宿主的模型选择白名单/策略约束，白名单未开启或为空时建议仍会渲染，但离线路由可能被宿主拒绝。
 
 ## 验证状态（诚实记录）
 
 本仓库验证过的内容：
 
 - `npm test`：配置规约、CLI argv/JSONL、身份 KV 命名空间与重开、adapter 生命周期/回滚/游标/卸载、子代理路由/范围/守卫/fork 拒绝/白名单/cwd/预检、wait 契约/批量/超时/宽限/无 inbox 手术 + **跨回合回归**、子代理退出守卫、路由/信任边界/别名、客户端表单/四个槽键、manifest/patch/exports/发布工作流。
-- 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、原生 `subagent` → `wait_subagent` → `send_message` 续接 → `wait_subagent` → `interrupt_agent` → `wait_subagent`。
-- 真实 Claude CLI（本机已登录）临时 profile 端到端：创建 CLI 子代理 → 等待 → 续接第二轮 → 等待 → 运行中中断 → 等待，全部通过；plan 权限、无工具，会消耗少量 Claude 额度。
+- 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、真实 `dsh-settings` 投影（schema 含 `childExitGuard`、`value` 不含 `trustedHosts`、越权写被拒）与 volatile 热更新、真实 `webServer` 上的 canonical + `/apollo/api` 别名路由（200/404/405）、原生 create → `wait_subagent` → 结算通知携带子代理正文 → 续接 → 等待 → 运行中子代理退出守卫真实拦截并继续回合 → 中断 → 等待。
+- 真实 Claude CLI（本机已登录）临时 profile 端到端，含**真实宿主重启**：创建 CLI 子代理 → 等待 → 落盘 `apollo_cli_<hash>/sessions/<id>.json` → dispose 后在同一 profile 重新 boot、恢复父 Agent → cold resume 同一 CLI 子代理（remoteId 不变）→ 等待 → 运行中中断 → 等待；plan 权限、无工具，会消耗少量 Claude 额度。
+- 真实 JSON storage backend（宿主 `@deepseek-ai/dsh-storage-json`）的 per-record KV 关闭/重开测试（`tests/cli-sessions.test.mjs`）。
 - **未验证**：Codex CLI 端到端（本机 `codex login status` = `Not logged in`，属于凭据阻塞）；从 npm 正式发布后的 `dsh plugin add` 安装路径与真实 Web GUI 设置页点击（本仓库尚无发布）；Apollo + 本插件组合运行（S4）。
 
 复现命令见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
