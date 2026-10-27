@@ -6,10 +6,13 @@
  *   2. `normalizeConfig` 的 EXACT 默认形状、volatile 引用展开、非法值回退、
  *      去重/裁剪规则，以及「返回全新普通对象」；
  *   3. `currentConfig` / `liveConfigEntry` 经 configEditor 读活 fiber 配置；
- *   4. 与 dsh-settings 的投影契约（本地复刻其 volatileForm/projectForm/
- *      isVolatilePath 三个纯函数，按参考运行时 0.2.0-rc.2 的
- *      `@deepseek-ai/dsh-settings/lib/index.js` 抄写）：可编辑字段集合必须恰好是
- *      volatile 集合，`trustedHosts` 必须落在表单之外。
+ *   4. 与 dsh-settings 的投影契约：可编辑字段集合必须恰好是 volatile 集合，
+ *      `trustedHosts` 必须落在表单之外。宿主包只导出 SettingsForms/错误类，
+ *      volatileForm/projectForm/isVolatilePath 是内部纯函数（0.2.1-rc.2 的
+ *      `@deepseek-ai/dsh-settings/lib/index.js` 未从入口导出），无法在不构造
+ *      完整 settings 服务的情况下直接 import；这里保留行为等价的本地纯函数断言
+ *      形状，并由 `scripts/runtime-smoke.mjs` 在真实宿主 settings 上断言实际
+ *      投影（schema 含 childExitGuard、value 不含 trustedHosts、越权写入被拒）。
  */
 
 import { test } from 'node:test'
