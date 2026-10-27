@@ -698,7 +698,7 @@ test('版本预检：低于测试基线 → 可操作错误，且不落 KV、不
   const sessions = makeSessions()
   await assert.rejects(
     () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'codex', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: new AbortController().signal }),
-    /requires codex 0\.162\.1 or newer \(found 0\.150\.0\)/,
+    /requires codex 0\.162\.1 or newer \(found 0\.150\.0\) at \/resolved\/codex/,
   )
   assert.equal(created, 0)
   assert.deepEqual(sessions.calls, [])
@@ -709,7 +709,7 @@ test('版本预检：无法识别的版本输出 → 可操作错误，不落 KV
   const sessions = makeSessions()
   await assert.rejects(
     () => startCliSubagent(ctx, makeConfig(), sessions, { provider: 'claude', description: 'd', prompt: 'p' }, { agent: makeAgent(), signal: new AbortController().signal }),
-    /could not recognize the claude version/,
+    /could not recognize the claude version .* at \/resolved\/claude/,
   )
   assert.deepEqual(sessions.calls, [])
 })

@@ -55,18 +55,20 @@ export function versionAtLeast(found, minimum) {
  * Validate one CLI's version output against the tested baseline.
  * @param {'codex'|'claude'} cli - backend id.
  * @param {unknown} output - `--version` text.
+ * @param {string} [executable] - resolved executable path for the diagnostic.
  * @returns {string} the detected version (for diagnostics/tests).
  * @throws {Error} unparseable or older than the supported minimum.
  */
-export function assertCliVersion(cli, output) {
+export function assertCliVersion(cli, output, executable) {
+  const where = typeof executable === 'string' && executable !== '' ? ` at ${executable}` : ''
   const minimum = CLI_MIN_VERSIONS[cli]
   if (minimum === undefined) throw new Error(`Better Subagent has no version baseline for CLI "${String(cli)}"`)
   const found = parseCliVersion(output)
   if (found === undefined) {
-    throw new Error(`Better Subagent could not recognize the ${cli} version from \`${cli} --version\`; install ${cli} ${CLI_MIN_LABELS[cli]} or newer and make sure the command works, or set its absolute path in Plugins → Better Subagent`)
+    throw new Error(`Better Subagent could not recognize the ${cli} version from \`${cli} --version\`${where}; install ${cli} ${CLI_MIN_LABELS[cli]} or newer and make sure the command works, or set its absolute path in Plugins → Better Subagent`)
   }
   if (!versionAtLeast(found, minimum)) {
-    throw new Error(`Better Subagent requires ${cli} ${CLI_MIN_LABELS[cli]} or newer (found ${found.join('.')}); update the executable or set a supported one in Plugins → Better Subagent`)
+    throw new Error(`Better Subagent requires ${cli} ${CLI_MIN_LABELS[cli]} or newer (found ${found.join('.')})${where}; update the executable or set a supported one in Plugins → Better Subagent`)
   }
   return found.join('.')
 }

@@ -504,12 +504,12 @@ test('version: versionAtLeast 精确比较 major/minor/patch', () => {
   assert.equal(versionAtLeast([2, 0, 999], [2, 1, 300]), false)
 })
 
-test('version: assertCliVersion 接受基线以上、拒绝过旧与不可解析输出', () => {
+test('version: assertCliVersion 接受基线以上、拒绝过旧与不可解析输出，并点名可执行文件', () => {
   assert.equal(assertCliVersion('codex', 'codex-cli 0.164.0'), '0.164.0')
-  assert.equal(assertCliVersion('claude', '2.1.309 (Claude Code)'), '2.1.309')
-  assert.throws(() => assertCliVersion('codex', 'codex-cli 0.160.0'), /requires codex 0\.162\.1 or newer \(found 0\.160\.0\)/)
+  assert.equal(assertCliVersion('claude', '2.1.309 (Claude Code)', '/opt/bin/claude'), '2.1.309')
+  assert.throws(() => assertCliVersion('codex', 'codex-cli 0.160.0', '/opt/bin/codex'), /requires codex 0\.162\.1 or newer \(found 0\.160\.0\) at \/opt\/bin\/codex/)
   assert.throws(() => assertCliVersion('claude', '2.0.9'), /requires claude 2\.1\.300 or newer/)
-  assert.throws(() => assertCliVersion('claude', 'unknown'), /could not recognize the claude version/)
+  assert.throws(() => assertCliVersion('claude', 'unknown', '/opt/bin/claude'), /could not recognize the claude version .* at \/opt\/bin\/claude/)
   assert.throws(() => assertCliVersion('other', '1.0.0'), /no version baseline/)
   assert.equal(CLI_MIN_LABELS.codex, '0.162.1')
   assert.equal(CLI_MIN_LABELS.claude, '2.1.300')

@@ -110,7 +110,7 @@ export async function startCliSubagent(ctx, config, sessions, args, exec) {
     throw new Error(`Better Subagent ${cli} version check failed (${executable}); install ${cli} ${CLI_MIN_LABELS[cli]} or newer and make sure \`${cli} --version\` works, or set its absolute path in Plugins → Better Subagent`, { cause: error })
   }
   exec.signal.throwIfAborted()
-  assertCliVersion(cli, versionOutput)
+  assertCliVersion(cli, versionOutput, executable)
   const id = randomUUID()
   const record = {
     version: 1, id, parentId: parent.id, cli, cwd,
