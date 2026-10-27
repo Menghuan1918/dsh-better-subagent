@@ -17,6 +17,7 @@ import { installWaitTool, START_GRACE_MS, MIN_TIMEOUT_MS } from '../src/wait-sub
 /** A fake sessionQuery over in-memory durable child event logs. */
 function makeSessionQuery() {
   const logs = new Map()
+  const inherited = new Map()
   let nextSeq = 1
   return {
     logs,
@@ -27,12 +28,14 @@ function makeSessionQuery() {
       events.push(event)
       return event
     },
+    /** Mark the first `count` events as fork-inherited (not the child's own). */
+    setInherited(id, count) { inherited.set(id, count) },
     async observeSession(id) {
       const events = structuredClone(logs.get(id) ?? [])
       const lease = {
         source: 'live',
         header: { id },
-        inheritedEventCount: 0,
+        inheritedEventCount: inherited.get(id) ?? 0,
         events,
         cursor: events.at(-1)?.seq ?? -1,
         retain: () => lease,
@@ -261,6 +264,79 @@ test('child that already ended before this wait (no queued input) → immediate 
   const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
   assert.match(out, /already finished its last turn \(completed\)/)
   assert.doesNotMatch(out, /done \(/)
+})
+
+test('fork-style inherited history is not read as the child own turn/splice state', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  // The observation starts with the parent's history: an inherited turn/end
+  // and an inherited splice. None of it belongs to this child.
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  ctx.sessionQuery.setInherited('child-1', 3)
+  const pending = ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  await flushMicrotasks()
+  t.mock.timers.tick(START_GRACE_MS + 1000)
+  await flushMicrotasks()
+  const out = await pending
+  // Not "already finished": the only turn/end belongs to the parent prefix.
+  assert.match(out, /has not started after 30s/)
+  assert.doesNotMatch(out, /already finished/)
+})
+
+test('fork mutation: own turn/end after the inherited boundary is recognized', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  ctx.sessionQuery.setInherited('child-1', 2)
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'aborted' } })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.match(out, /already finished its last turn \(aborted\)/)
+})
+
+test('cancellation fold: queued then canceled before running settles as aborted, not pending forever', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  fireStart(ctx, { id: 'child-1', runId: 'run-1' })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, outcome: 'canceled', inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'aborted' } })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'aborted' })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.equal(out, DONE('child-1', 'aborted'))
+})
+
+test('cancellation fold without an end: canceled queue does not read as pending input', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, outcome: 'canceled', inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'aborted' } })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.match(out, /already finished its last turn \(aborted\)/)
+  assert.doesNotMatch(out, /has not started|could not be confirmed/)
+})
+
+test('claim fold: queued then claimed by a turn does not stay pending', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [{ role: 'user' }] })
+  ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.match(out, /already finished its last turn \(completed\)/)
+})
+
+test('matched end is terminal even when no DSH session is readable (external provider)', async () => {
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.observeSession = async () => { throw new Error('external child has no DSH session') }
+  fireStart(ctx, { id: 'child-1', runId: 'run-ext' })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-ext', stopReason: 'completed' })
+  const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  assert.equal(out, DONE('child-1'))
+  assert.doesNotMatch(out, /could not be confirmed/)
 })
 
 test('timeout_ms below 15 minutes is raised to 15 minutes', async (t) => {

@@ -85,25 +85,63 @@ export function installWaitTool(ctx) {
   })
 
   /**
-   * Read the child's durable turn state from its own session log.
-   * @returns `{ lastInsert, lastTurnEnd, lastTurnStart, reason }` or undefined.
+   * Fold the child's own durable log suffix into its inbox/turn account.
+   *
+   * Two host facts are load-bearing here:
+   * - `observeSession` reports `inheritedEventCount`; a fork-seeded child's
+   *   prefix is the parent's history and must never be read as this child's own
+   *   turn/splice (a parent turn/end would otherwise look like this child's).
+   * - `agent/inbox/spliced` records both insertions and removals; a turn claims
+   *   input by removing it (no `outcome`), while a cancellation removes it with
+   *   `outcome: 'canceled'`. Folding queue lengths per target therefore clears
+   *   input that was canceled or claimed instead of leaving a stale
+   *   "queued after the last turn end" forever.
+   * @param id - durable child session id.
+   * @returns folded account, or undefined when the session cannot be read.
    */
   const readTurns = async (id) => {
     let lease
     try {
       lease = await ctx.sessionQuery.observeSession(id)
       const events = Array.isArray(lease?.events) ? lease.events : []
+      const inherited = Number.isSafeInteger(lease?.inheritedEventCount) && lease.inheritedEventCount > 0
+        ? lease.inheritedEventCount
+        : 0
+      const own = events.slice(inherited)
+      const queue = { 'next-turn': 0, 'next-step': 0 }
       let lastInsert = -1
       let lastTurnEnd = -1
       let lastTurnStart = -1
+      let lastCanceled = -1
       let reason
-      for (const event of events) {
-        const seq = typeof event?.seq === 'number' ? event.seq : -1
+      for (let index = 0; index < own.length; index += 1) {
+        const event = own[index]
+        const seq = typeof event?.seq === 'number' ? event.seq : index
         if (event?.type === 'turn/start') lastTurnStart = seq
         else if (event?.type === 'turn/end') { lastTurnEnd = seq; reason = event.data?.reason }
-        else if (event?.type === 'agent/inbox/spliced' && Array.isArray(event.data?.inserted) && event.data.inserted.length > 0) lastInsert = seq
+        else if (event?.type === 'agent/inbox/spliced') {
+          const data = event.data ?? {}
+          const target = data.target === 'next-step' ? 'next-step' : 'next-turn'
+          const inserted = Array.isArray(data.inserted) ? data.inserted.length : 0
+          const removed = Number.isSafeInteger(data.removedCount) ? data.removedCount : 0
+          if (inserted > 0) {
+            queue[target] += inserted
+            lastInsert = seq
+          }
+          if (removed > 0) {
+            queue[target] = Math.max(0, queue[target] - removed)
+            if (data.outcome === 'canceled') lastCanceled = seq
+          }
+        }
       }
-      return { lastInsert, lastTurnEnd, lastTurnStart, reason }
+      return {
+        lastInsert,
+        lastTurnEnd,
+        lastTurnStart,
+        lastCanceled,
+        pending: queue['next-turn'] + queue['next-step'] > 0,
+        reason,
+      }
     } catch {
       return undefined
     } finally {
@@ -113,23 +151,26 @@ export function installWaitTool(ctx) {
 
   /**
    * Decide one child's current state from host-provable facts only.
+   *
+   * A `subagent/end` paired with the latest `subagent/start` runId is the
+   * activation's terminal edge: the host emits it only after that exact
+   * activation released its handle and its inbox had no runnable work left.
+   * Durable session state is therefore additional evidence for the no-end
+   * cases, not a veto over a matched end (queued work may have been canceled
+   * before it ran, and external providers need no readable DSH session).
    * @returns {Promise<{kind:'running'|'pending-input'|'new-activation'|'awaiting-end'|'unconfirmed'|'ended-earlier'|'settled', info?, reason?}>}
    */
   const evaluate = async (id) => {
     if (statusOf(id) === 'running') return { kind: 'running' }
-    const turns = await readTurns(id)
     const end = settled.get(id)
     const start = started.get(id)
     const endMatchesStart = end !== undefined
       && (start === undefined || start.runId === undefined || end.runId === start.runId)
-    if (end !== undefined && endMatchesStart) {
-      if (turns === undefined) return { kind: 'unconfirmed', reason: 'state-unreadable' }
-      if (turns.lastInsert > turns.lastTurnEnd) return { kind: 'pending-input' }
-      return { kind: 'settled', info: end.info }
-    }
+    if (end !== undefined && endMatchesStart) return { kind: 'settled', info: end.info }
     if (end !== undefined && !endMatchesStart) return { kind: 'new-activation' }
+    const turns = await readTurns(id)
     if (turns === undefined) return { kind: 'unconfirmed', reason: 'state-unreadable' }
-    if (turns.lastInsert > turns.lastTurnEnd) return { kind: 'pending-input' }
+    if (turns.pending) return { kind: 'pending-input' }
     if (statusOf(id) === 'ready' && turns.lastTurnEnd >= 0) return { kind: 'ended-earlier', reason: turns.reason }
     return { kind: 'awaiting-end' }
   }
