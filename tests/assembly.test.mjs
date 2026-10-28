@@ -25,7 +25,7 @@ const patch = () => yaml.load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8
 test('manifest identity: scoped name, version, GPL-3.0-or-later, repository, publish config', () => {
   const m = manifest()
   assert.equal(m.name, PACKAGE_NAME)
-  assert.equal(m.version, '0.1.0')
+  assert.equal(m.version, '0.1.1')
   assert.equal(m.license, 'GPL-3.0-or-later')
   assert.equal(m.type, 'module')
   assert.equal(m.main, 'src/index.js')

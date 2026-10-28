@@ -30,12 +30,11 @@ dsh --profile <profile>
 本插件**不依赖 Apollo**，也不会安装或加载 Apollo。设置出现在
 **Plugins → @menghuan1918/dsh-better-subagent → dsh-better-subagent 行**。
 
-> 0.1.0 尚未发布到 npm；本仓库的真实宿主验证使用等价的 scoped 本地安装布局
-> （见 `scripts/runtime-smoke.mjs`），不是从 npm 下载后的 `dsh plugin add`。
+> 当前补丁版本为 `0.1.1`，修复异步日志观察期间的跨回合等待竞态，以及超过启动宽限后的状态重读。宿主集成验证见 `scripts/runtime-smoke.mjs`；npm 发布结果以对应 GitHub Release 与 registry 为准。
 
 ### 与 Apollo 一起使用（集成由 Apollo 负责）
 
-Apollo 的集成版本会插入同一个稳定行（id 与 name 均为 `dsh-better-subagent`），
+Apollo 的集成版本会插入同一个稳定行（id 为 `dsh-better-subagent`，name 为 `@menghuan1918/dsh-better-subagent`），
 Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份。浏览器半边的
 `plugins.row.config` 同时注册以下键，全部指向同一行、同一份配置：
 
