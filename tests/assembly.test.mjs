@@ -25,7 +25,7 @@ const patch = () => yaml.load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8
 test('manifest identity: scoped name, version, GPL-3.0-or-later, repository, publish config', () => {
   const m = manifest()
   assert.equal(m.name, PACKAGE_NAME)
-  assert.equal(m.version, '0.1.1')
+  assert.equal(m.version, '0.2.0')
   assert.equal(m.license, 'GPL-3.0-or-later')
   assert.equal(m.type, 'module')
   assert.equal(m.main, 'src/index.js')
@@ -70,12 +70,15 @@ test('manifest: files whitelist never ships tests, specs, scripts or credentials
   }
 })
 
-test('bundle patch: exactly one host-plane row with the scoped package name', () => {
+test('bundle patch: stable shared PTC row plus the scoped package row', () => {
   const patches = patch()
   assert.equal(Array.isArray(patches), true)
   assert.deepEqual(patches.map((entry) => Object.keys(entry)), [['insert']])
   const rows = patches[0].insert
-  assert.deepEqual(rows, [{ id: ENTRY_ID, name: PACKAGE_NAME }])
+  assert.deepEqual(rows, [
+    { id: 'dsh-better-ptc', name: 'dsh-better-ptc' },
+    { id: ENTRY_ID, name: PACKAGE_NAME },
+  ])
   const disabled = patches.filter((entry) => entry.disabled === true)
   assert.deepEqual(disabled, [], 'this bundle must not disable any native row')
 })

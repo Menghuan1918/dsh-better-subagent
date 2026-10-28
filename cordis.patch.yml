@@ -21,5 +21,11 @@
 # tiers.{fast,quality}, subagents.{eng,global}, subagents.{codex,claude}.*.
 # Deployment flag, hand-written only: trustedHosts.
 - insert:
+    # Singleton PTC deadline-exemption row. The ask-user bundle inserts the
+    # same id/name; the Loader deduplicates so both plugins share one service
+    # and one runtime wrapper.
+    - id: dsh-better-ptc
+      name: dsh-better-ptc
+
     - id: dsh-better-subagent
       name: '@menghuan1918/dsh-better-subagent'

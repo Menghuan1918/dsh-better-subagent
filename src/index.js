@@ -17,6 +17,7 @@
 
 import { mountChildExitGuard } from './child-exit-guard.js'
 import { mountPrompt } from './prompt.js'
+import { mountPtcExemption } from './ptc-exemption.js'
 import { mountSettings } from './settings.js'
 import { mountSubagents } from './subagents.js'
 import { mountWaitSubagent } from './wait-subagent.js'
@@ -35,6 +36,7 @@ export function apply(ctx, config) {
   mountSettings(ctx, config)
   mountSubagents(ctx, config)
   mountWaitSubagent(ctx, config)
+  mountPtcExemption(ctx)
   mountChildExitGuard(ctx, config)
   mountPrompt(ctx, config)
 }
