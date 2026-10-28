@@ -73,9 +73,11 @@
 7. durable 不可读：child 已不在 registry → 用 start/end 对 settle（external provider 可能没有本地 DSH 会话）；child 仍 live → `could not be confirmed`，不伪报成功；
 8. 无 end 时：`pending > 0` 继续等；不在 registry 且自有日志有 `turn/end` → “已在此次等待前结束”的说明（不是旧 done）；30s 启动宽限后仍无法证明 → not-started/不可确认行。
 
+`observeSession` 是异步边界：读取返回后必须重新检查 live running，并确认 start/end 记录仍是读取前的同一代（事件每次替换记录对象，即使 runId 相同也能识别新的 end）。跨代读取不参与完成判断，由现有 250ms poller 重读；不立即循环重试。否则新回合在读取期间 claim 掉 pending 后，会被旧 end 误判为 done。
+
 输出行保持旧契约：done/timeout/aborted/not-started/不可确认；正文交给框架 settlement notice，工具不碰父代理 inbox。
 
-回归测试：`tests/wait-subagent.test.mjs` 构造「旧 end → 新 start + 排队 idle → running → 新 end」与「同一 run 内 turn 结束后又有 splice」两组精确时序。
+回归测试：`tests/wait-subagent.test.mjs` 构造「旧 end → 新 start + 排队 idle → running → 新 end」与「同一 run 内 turn 结束后又有 splice」；另通过真实 `installWaitTool` 注册 seam 的 deferred `observeSession`，覆盖读取挂起期间的新 activation / 无新 start 的 resident running + claim，以及 start/end 换代后 idle 的旧日志快照。
 
 ## 6. 子代理退出守卫（`src/child-exit-guard.js`）
 

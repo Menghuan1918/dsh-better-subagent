@@ -166,9 +166,13 @@ export function installWaitTool(ctx) {
     if (statusOf(id) === 'running') return { kind: 'running' }
     const end = settled.get(id)
     const start = started.get(id)
+    const turns = await readTurns(id)
+    if (statusOf(id) === 'running') return { kind: 'running' }
+    // Each lifecycle event replaces its entry, even if the runId is unchanged.
+    // Discard a read spanning generations; the normal poller will read again.
+    if (started.get(id) !== start || settled.get(id) !== end) return { kind: 'awaiting-end' }
     const endMatchesStart = end !== undefined
       && (start === undefined || start.runId === undefined || end.runId === start.runId)
-    const turns = await readTurns(id)
     if (end !== undefined && endMatchesStart) {
       if (turns !== undefined) {
         if (turns.pending) return { kind: 'pending-input' }

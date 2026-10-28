@@ -12,7 +12,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { installWaitTool, START_GRACE_MS, MIN_TIMEOUT_MS } from '../src/wait-subagent.js'
+import { installWaitTool, START_GRACE_MS, MIN_TIMEOUT_MS, POLL_MS } from '../src/wait-subagent.js'
 
 /** A fake sessionQuery over in-memory durable child event logs. */
 function makeSessionQuery() {
@@ -253,6 +253,96 @@ test('RESIDENT-IDLE REGRESSION: matched old end does not settle newer queued inp
   await pending.promise
   assert.equal(pending.value, DONE('child-1'))
 })
+
+for (const newActivation of [true, false]) {
+  test(`DEFERRED OBSERVATION REGRESSION: ${newActivation ? 'new activation' : 'resident turn without a new start'} runs and claims input during the read`, async (t) => {
+    const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+    fireStart(ctx, { id: 'child-1', runId: 'run-old' })
+    ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+    ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+    fireEnd(ctx, { id: 'child-1', runId: 'run-old', stopReason: 'completed' })
+    ctx.agentStatus.set('child-1', { status: 'idle' })
+    ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', inserted: [{ role: 'user' }] })
+
+    const entered = Promise.withResolvers()
+    const release = Promise.withResolvers()
+    const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    ctx.sessionQuery.observeSession = async (id) => {
+      entered.resolve()
+      await release.promise
+      return observe(id)
+    }
+    const controller = new AbortController()
+    t.after(() => { release.resolve(); controller.abort() })
+    const pending = tracked(ctx.getTool().execute({ subagent_id: ['child-1'] }, { ...makeExec(), signal: controller.signal }))
+    await entered.promise
+
+    const runId = newActivation ? 'run-new' : 'run-old'
+    if (newActivation) fireStart(ctx, { id: 'child-1', runId })
+    ctx.agentStatus.set('child-1', { status: 'running' })
+    ctx.sessionQuery.append('child-1', 'turn/start', { turn: 2 })
+    ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', removedCount: 1, inserted: [] })
+    release.resolve()
+    await flushMicrotasks()
+    assert.equal(pending.settled, false, 'claimed input is not completion: the child is now running')
+
+    ctx.sessionQuery.append('child-1', 'turn/end', { turn: 2, reason: { kind: 'error' } })
+    fireEnd(ctx, { id: 'child-1', runId, stopReason: 'error' })
+    await pending.promise
+    assert.equal(pending.value, DONE('child-1', 'error'), 'only the new end can finish this wait')
+  })
+}
+
+for (const edge of ['start', 'end']) {
+  test(`DEFERRED GENERATION REGRESSION: a new ${edge} invalidates the observation even when the child is idle`, async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+    fireStart(ctx, { id: 'child-1', runId: 'run-old' })
+    ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+    ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+    fireEnd(ctx, { id: 'child-1', runId: 'run-old', stopReason: 'completed' })
+    ctx.agentStatus.set('child-1', { status: 'idle' })
+
+    const entered = Promise.withResolvers()
+    const release = Promise.withResolvers()
+    const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    ctx.sessionQuery.observeSession = async (id) => {
+      // This lease predates the lifecycle edge and the newly queued input.
+      const lease = await observe(id)
+      entered.resolve()
+      await release.promise
+      return lease
+    }
+    const controller = new AbortController()
+    t.after(() => { release.resolve(); controller.abort() })
+    const pending = tracked(ctx.getTool().execute({ subagent_id: ['child-1'] }, { ...makeExec(), signal: controller.signal }))
+    await entered.promise
+
+    const runId = edge === 'start' ? 'run-new' : 'run-old'
+    if (edge === 'start') fireStart(ctx, { id: 'child-1', runId })
+    else {
+      ctx.sessionQuery.append('child-1', 'turn/start', { turn: 2 })
+      ctx.sessionQuery.append('child-1', 'turn/end', { turn: 2, reason: { kind: 'error' } })
+      fireEnd(ctx, { id: 'child-1', runId, stopReason: 'error' })
+    }
+    ctx.agentStatus.set('child-1', { status: 'idle' })
+    ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', inserted: [{ role: 'user' }] })
+    release.resolve()
+    await flushMicrotasks()
+    assert.equal(pending.settled, false, 'the old empty queue cannot prove completion after a lifecycle edge')
+
+    t.mock.timers.tick(POLL_MS)
+    await flushMicrotasks()
+    assert.equal(pending.settled, false, 'a fresh observation must still veto the queued input')
+    ctx.agentStatus.set('child-1', { status: 'running' })
+    ctx.sessionQuery.append('child-1', 'turn/start', { turn: 3 })
+    ctx.sessionQuery.append('child-1', 'agent/inbox/spliced', { target: 'next-turn', removedCount: 1, inserted: [] })
+    ctx.sessionQuery.append('child-1', 'turn/end', { turn: 3, reason: { kind: 'aborted' } })
+    fireEnd(ctx, { id: 'child-1', runId, stopReason: 'aborted' })
+    await pending.promise
+    assert.equal(pending.value, DONE('child-1', 'aborted'))
+  })
+}
 
 test('freshly dispatched child that has not started yet → grace, then settles', async () => {
   const ctx = makeCtx({ children: [{ id: 'child-1' }] })
