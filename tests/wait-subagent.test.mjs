@@ -344,6 +344,37 @@ for (const edge of ['start', 'end']) {
   })
 }
 
+test('observation generation retry after 30s is not a child startup failure', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  fireStart(ctx, { id: 'child-1', runId: 'run-1' })
+  ctx.sessionQuery.append('child-1', 'turn/start', { turn: 1 })
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'completed' })
+  const entered = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+  let first = true
+  ctx.sessionQuery.observeSession = async (id) => {
+    const lease = await observe(id)
+    if (first) { first = false; entered.resolve(); await release.promise }
+    return lease
+  }
+  const controller = new AbortController()
+  t.after(() => { release.resolve(); controller.abort() })
+  const pending = tracked(ctx.getTool().execute({ subagent_id: ['child-1'] }, { ...makeExec(), signal: controller.signal }))
+  await entered.promise
+  t.mock.timers.tick(START_GRACE_MS + 1)
+  ctx.sessionQuery.append('child-1', 'turn/end', { turn: 2, reason: { kind: 'error' } })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-1', stopReason: 'error' })
+  release.resolve()
+  await flushMicrotasks()
+  assert.equal(pending.settled, false, 'a changing observation must get a fresh read even after the startup grace')
+  t.mock.timers.tick(POLL_MS)
+  await flushMicrotasks()
+  assert.equal(pending.value, DONE('child-1', 'error'))
+})
+
 test('freshly dispatched child that has not started yet → grace, then settles', async () => {
   const ctx = makeCtx({ children: [{ id: 'child-1' }] })
   const pending = tracked(ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec()))

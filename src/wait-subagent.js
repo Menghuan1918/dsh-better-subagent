@@ -160,7 +160,7 @@ export function installWaitTool(ctx) {
    * When the durable state is unreadable, the matched pair settles only if the
    * child is no longer live (external provider with no local DSH session); a
    * live child stays `unconfirmed` rather than claiming success.
-   * @returns {Promise<{kind:'running'|'pending-input'|'new-activation'|'awaiting-end'|'unconfirmed'|'ended-earlier'|'settled', info?, reason?}>}
+   * @returns {Promise<{kind:'running'|'pending-input'|'new-activation'|'awaiting-end'|'observation-changed'|'unconfirmed'|'ended-earlier'|'settled', info?, reason?}>}
    */
   const evaluate = async (id) => {
     if (statusOf(id) === 'running') return { kind: 'running' }
@@ -170,7 +170,7 @@ export function installWaitTool(ctx) {
     if (statusOf(id) === 'running') return { kind: 'running' }
     // Each lifecycle event replaces its entry, even if the runId is unchanged.
     // Discard a read spanning generations; the normal poller will read again.
-    if (started.get(id) !== start || settled.get(id) !== end) return { kind: 'awaiting-end' }
+    if (started.get(id) !== start || settled.get(id) !== end) return { kind: 'observation-changed' }
     const endMatchesStart = end !== undefined
       && (start === undefined || start.runId === undefined || end.runId === start.runId)
     if (end !== undefined && endMatchesStart) {
