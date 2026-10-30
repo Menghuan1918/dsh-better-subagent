@@ -9,7 +9,7 @@
 - **子代理专用提示词**：委派纪律、fast/quality 分档、PTC fanout、CLI 目录与子代理守卫措辞只由本插件提供一份运行时来源。
 - **设置页**：不构建的 React 行配置页（`plugins.row.config`），覆盖接入范围、模型分档、两个 CLI 后端与子代理退出守卫。
 
-许可证：**GPL-3.0-or-later**（见 [LICENSE](LICENSE)；复用内容与第三方许可见 [third-party/NOTICE](third-party/NOTICE)）。
+许可证：**Apache-2.0**（见 [LICENSE](LICENSE)；复用内容与第三方许可见 [third-party/NOTICE](third-party/NOTICE)）。
 
 > 目标宿主：DSH `>=0.2.1-rc.2 <0.3.0`；Node.js `^22.19.0 || >=24.0.0`。纯 ESM，无构建步骤。
 
@@ -47,6 +47,8 @@ Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份�
 
 ## 快速配置
 
+设置分为「概览」「CLI」「模型分档」「连接」。CLI 页内切换 Codex / Claude；标签旁的信息图标可展开说明。所有修改先保留为草稿，点击「保存」一次提交，跨页切换不会丢失输入。连接页可编辑受信主机并刷新只读探测。
+
 1. **没有 eng / eng-ptc 预设时，必须开启 global 范围。**
    设置页的「接入范围」里勾选「全部预设」（`subagents.global: true`），否则标准预设的会话看不到 CLI 子代理路由。eng 预设会话默认由 `subagents.eng: true` 覆盖。
 2. **启用一个可用后端**（例如 Claude）：
@@ -79,13 +81,13 @@ Loader 按行 id 去重，因此两个 bundle 同时选中时只会挂载一份�
 | `subagents.codex.permissionMode` | `read-only` | 是 | `codex --sandbox` 取值 |
 | `subagents.codex.defaultModel` / `models` | 空 | 是 | 模型白名单与默认档；模型条目为 `{id, efforts[], defaultEffort}` |
 | `subagents.claude.*` | `enabled=false`、`executable=claude`、`permissionMode=plan` | 是 | Claude 后端；没有 `profile` 字段 |
-| `trustedHosts` | `[]` | **否** | 部署配置：额外信任的反向代理权威（host 或 host:port） |
+| `trustedHosts` | `[]` | 是 | 额外信任的反向代理权威（host 或 host:port）；信任边界按请求重读活配置 |
 
 规则：
 
 - 模型与 effort 只接受白名单里的组合；**不做静默替换**。缺失/不允许时在启动前明确失败。
 - 权限**完全**由这里设置决定，不继承父会话的权限状态，也不放宽默认值。
-- `trustedHosts` 改动会重挂本行；其余字段保存即生效。
+- 全部字段保存即生效（volatile 不重挂）；`trustedHosts` 在下一次 API 请求即生效。
 - 每个 CLI 子代理同一时刻最多一个 CLI 回合；model/effort 在创建时固定，权限每轮读取最新配置。
 - 行/包升级、预设改动后仍需要对应的重载；`wait_subagent`、守卫与路由按次读取活配置。
 
@@ -154,7 +156,7 @@ Apollo 的通用工程原则、完整工作流 skills、job/general 守卫措辞
 本仓库验证过的内容：
 
 - `npm test`：配置规约、CLI argv/JSONL、身份 KV 命名空间与重开、adapter 生命周期/回滚/游标/卸载、子代理路由/范围/守卫/fork 拒绝/白名单/cwd/预检、wait 契约/批量/超时/宽限/无 inbox 手术 + **跨回合回归**、子代理退出守卫、路由/信任边界/别名、客户端表单/四个槽键、manifest/patch/exports/发布工作流。
-- 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、真实 `dsh-settings` 投影（schema 含 `childExitGuard`、`value` 不含 `trustedHosts`、越权写被拒）与 volatile 热更新、真实 `webServer` 上的 canonical + `/apollo/api` 别名路由（200/404/405）、原生 create → `wait_subagent` → 结算通知携带子代理正文 → 续接 → 等待 → 运行中子代理退出守卫真实拦截并继续回合 → 中断 → 等待。
+- 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、真实 `dsh-settings` 投影（schema 与 value 含全部 volatile 字段）与 volatile 热更新（`childExitGuard` 与 `trustedHosts` 均经真实 settings 写入生效，`trustedHosts` 在伪造 Host 的下一次请求放行）、真实 `webServer` 上的 canonical + `/apollo/api` 别名路由（200/403/404/405）、原生 create → `wait_subagent` → 结算通知携带子代理正文 → 续接 → 等待 → 运行中子代理退出守卫真实拦截并继续回合 → 中断 → 等待。
 - 真实 Claude CLI（本机已登录）临时 profile 端到端，含**同 profile/DSH_HOME 的进程内宿主重启**（dispose 宿主 fiber 后在同一进程、同一 profile 重新 boot，不是另一个 OS 进程）：创建 CLI 子代理 → 等待 → 落盘 `apollo_cli_<hash>/sessions/<id>.json` → 重新 boot、恢复父 Agent → cold resume 同一 CLI 子代理（remoteId 不变）→ 等待 → 运行中中断 → 等待；plan 权限、无工具，会消耗少量 Claude 额度。
 - 真实 JSON storage backend（宿主 `@deepseek-ai/dsh-storage-json`）的 per-record KV 关闭/重开测试（`tests/cli-sessions.test.mjs`）。
 - **未验证**：Codex CLI 端到端（本机 `codex login status` = `Not logged in`，属于凭据阻塞）；从 npm 正式发布后的 `dsh plugin add` 安装路径与真实 Web GUI 设置页点击（本仓库尚无发布）；Apollo + 本插件组合运行（S4）。
@@ -182,4 +184,4 @@ npm pack --dry-run --json
 
 ## 许可证
 
-GPL-3.0-or-later。复用的 Apollo 代码（GPL-3.0-or-later）与信任边界逻辑（MIT）的版权/许可声明见 [third-party/NOTICE](third-party/NOTICE)。
+Apache-2.0。复用的 Apollo 代码（Apache-2.0）与信任边界逻辑（MIT）的版权/许可声明见 [third-party/NOTICE](third-party/NOTICE)。

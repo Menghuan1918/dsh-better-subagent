@@ -8,9 +8,10 @@
  * - the one host-plane row loads with no Apollo installed;
  * - `wait_subagent` is visible and the per-Agent prompt sections really
  *   assemble through `ctx.systemPrompt.assemble`;
- * - the real dsh-settings service projects exactly the volatile form and
- *   rejects deployment-only writes; a hot `childExitGuard` update takes effect
- *   without remounting the row;
+ * - the real dsh-settings service projects exactly the volatile form (all
+ *   fields including `trustedHosts`); a hot `childExitGuard` update takes
+ *   effect without remounting the row, and a hot `trustedHosts` update moves
+ *   the read-only API trust fence on the very next request;
  * - the real `webServer` serves `/better-subagent/api/*` (canonical + Apollo
  *   read aliases) with the trust fence and 404/405 semantics;
  * - native subagent create → wait_subagent (short line) → the framework
@@ -27,6 +28,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { request as httpRequest } from 'node:http'
 import { existsSync, readdirSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, writeFile, cp, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -57,6 +59,9 @@ for (const name of ['package.json', 'src', 'docs', 'cordis.patch.yml', 'LICENSE'
   await cp(join(root, name), join(plugin, name), { recursive: true })
 }
 await symlink(dirname(dsh), join(modules, '@deepseek-ai'))
+// Exercise the complete published bundle, including its shared PTC dependency.
+const ptcRoot = dirname(fileURLToPath(import.meta.resolve('dsh-better-ptc/package.json')))
+await symlink(ptcRoot, join(modules, 'dsh-better-ptc'))
 manifest.dependencies[packageName] = `file:${plugin}`
 await writeFile(packageFile, JSON.stringify(manifest, null, 2))
 
@@ -209,16 +214,13 @@ try {
     return row
   }
   let settingsRow = await findRow()
-  assert.equal('trustedHosts' in settingsRow.value, false, 'deployment flag is outside the editable form')
+  assert.equal('trustedHosts' in settingsRow.value, true, 'trustedHosts is editable (volatile, re-read per request)')
+  assert.deepEqual(settingsRow.value.trustedHosts, [])
   assert.equal('childExitGuard' in settingsRow.value, true)
   assert.equal(settingsRow.value.childExitGuard, false)
   const formText = JSON.stringify(settingsRow.schema)
   assert.match(formText, /childExitGuard/)
-  assert.doesNotMatch(formText, /trustedHosts/)
-  await assert.rejects(
-    () => settings.update('dsh-better-subagent', { trustedHosts: ['evil.example.com'] }, settingsRow.revision),
-    /not volatile/,
-  )
+  assert.match(formText, /trustedHosts/)
   await settings.update('dsh-better-subagent', { childExitGuard: true }, settingsRow.revision)
   settingsRow = await findRow()
   assert.equal(settingsRow.value.childExitGuard, true, 'volatile update is persisted in the form snapshot')
@@ -241,6 +243,24 @@ try {
   assert.equal(Array.isArray(routes.body.value.routes), true)
   assert.equal((await http('/better-subagent/api/unknown')).status, 404)
   assert.equal((await http('/better-subagent/api/capabilities', { method: 'POST', body: '{}' })).status, 405)
+
+  // trustedHosts is volatile: an untrusted authority is refused before the
+  // settings write and trusted on the very next request after it — the fence
+  // moves without remounting the row.
+  const forgedGet = (authority) => new Promise((resolveGet, rejectGet) => {
+    const req = httpRequest(`${origin}/better-subagent/api/capabilities`, { headers: { host: authority } }, (res) => {
+      res.resume()
+      res.on('end', () => resolveGet(res.statusCode))
+    })
+    req.on('error', rejectGet)
+    req.end()
+  })
+  assert.equal(await forgedGet('proxy.example.com'), 403, 'untrusted authority is refused')
+  settingsRow = await findRow()
+  await settings.update('dsh-better-subagent', { trustedHosts: ['proxy.example.com'] }, settingsRow.revision)
+  settingsRow = await findRow()
+  assert.deepEqual(settingsRow.value.trustedHosts, ['proxy.example.com'], 'the write is persisted in the form snapshot')
+  assert.equal(await forgedGet('proxy.example.com'), 200, 'hot trustedHosts update moves the trust fence without remount')
 
   // ── native create → wait; the settlement notice keeps the child content ───
   const activation = await call('subagent', { description: 'smoke child', prompt: 'First smoke turn.' })

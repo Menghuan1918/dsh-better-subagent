@@ -10,13 +10,13 @@
  *     运行中 fiber 的稳定引用（`createVolatile` 协议 + `loader/volatile-update`），
  *     消费方每次读取都拿到最新值。子代理路由、等待工具、退出守卫、提示词段与
  *     设置表单都按次读取，因此这些开关无需重启或重挂即可即时生效。
- *   - 普通字段（`trustedHosts`）是**部署标志**：只在行配置里声明，改动会让 Loader
- *     正常重挂本行（重挂才需要重新读）。
+ *   - `trustedHosts` 同样标 volatile：HTTP 信任边界按请求重读活配置（见
+ *     `src/panel.js`），改完即时生效、不重挂。
  *
  * 可编辑范围（volatile，即 dsh-settings 投影出的行配置表单字段）：
  * `childExitGuard`、`tiers.fast`、`tiers.quality`、`subagents.eng`、
- * `subagents.global`、`subagents.codex.*`、`subagents.claude.*`。表单写入只能落在
- * volatile 路径上（dsh-settings 会拒绝其他路径），所以部署标志不会从网页上被改写。
+ * `subagents.global`、`subagents.codex.*`、`subagents.claude.*`、`trustedHosts`。
+ * 表单写入只能落在 volatile 路径上（dsh-settings 会拒绝其他路径）。
  *
  * 读取入口：
  *   - `normalizeConfig(value)`——把任意来源（volatile 引用、解析后的配置、旧
@@ -114,8 +114,8 @@ export const TIER_NAMES = Object.freeze(['fast', 'quality'])
 /**
  * 本插件行的正式配置 schema。
  *
- * `childExitGuard`、`subagents.{eng,global}`、`subagents.{codex,claude}` 标 volatile
- * （即时生效、不重挂）；`trustedHosts` 是普通部署标志（改动重挂本行后生效）。
+ * `childExitGuard`、`subagents.{eng,global}`、`subagents.{codex,claude}`、
+ * `trustedHosts` 全部标 volatile（即时生效、不重挂）：信任边界按请求重读活配置。
  */
 export const Config = z.object({
   /** 运行中子代理退出拦截总开关（默认关闭，显式开启才拦回合结束）。 */
@@ -135,7 +135,7 @@ export const Config = z.object({
     claude: backendSchema(BACKENDS.claude),
   }),
   /** 允许调用本包 HTTP 路由的反向代理权威（host 或 host:port）；默认只信 loopback。 */
-  trustedHosts: z.array(z.string()).default([]),
+  trustedHosts: z.array(z.string()).default([]).volatile(),
 })
 
 // ── 规整（volatile 引用 → 普通 JSON）────────────────────────────────────────

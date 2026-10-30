@@ -1,7 +1,7 @@
 dsh-better-subagent — third-party notices
 =========================================
 
-This package is licensed GPL-3.0-or-later (see ../LICENSE).
+This package is licensed Apache-2.0 (see ../LICENSE).
 
 Ported from dsh-apollo
 ---------------------
@@ -10,7 +10,7 @@ parsing, the durable identity KV, the CLI routing bridge, the read-only
 capability/model APIs, and the row-config settings form) are adapted from
 dsh-apollo (npm: @menghuan1918/dsh-apollo,
 https://github.com/Menghuan1918/dsh-apollo), which is licensed under
-GPL-3.0-or-later. Copyright (C) 2026 Menghuan1918. The subagent CLI route ids,
+Apache-2.0. Copyright (C) 2026 Menghuan1918. The subagent CLI route ids,
 the `apollo_cli_<sha256(profile.dir)[:16]>` KV namespace and the stored record
 shape are kept for compatibility and are not a new contract.
 

@@ -9,6 +9,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
@@ -22,11 +23,11 @@ const ENTRY_ID = 'dsh-better-subagent'
 const manifest = () => JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const patch = () => yaml.load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8'))
 
-test('manifest identity: scoped name, version, GPL-3.0-or-later, repository, publish config', () => {
+test('manifest identity: scoped name, version, Apache-2.0, repository, publish config', () => {
   const m = manifest()
   assert.equal(m.name, PACKAGE_NAME)
-  assert.equal(m.version, '0.2.0')
-  assert.equal(m.license, 'GPL-3.0-or-later')
+  assert.equal(m.version, '0.3.0')
+  assert.equal(m.license, 'Apache-2.0')
   assert.equal(m.type, 'module')
   assert.equal(m.main, 'src/index.js')
   assert.deepEqual(m.exports, {
@@ -142,12 +143,13 @@ test('release workflow: release-published OIDC trusted publishing, no npm token'
   assert.doesNotMatch(workflow, /NPM_TOKEN|NODE_AUTH_TOKEN|npm_token/)
 })
 
-test('license is the full GPL-3.0 text and third-party notices exist', () => {
+test('license is the full Apache-2.0 text and third-party notices exist', () => {
   const license = readFileSync(join(ROOT, 'LICENSE'), 'utf8')
-  assert.match(license, /GNU GENERAL PUBLIC LICENSE/)
-  assert.match(license, /Version 3, 29 June 2007/)
+  assert.match(license, /Apache License/)
+  assert.match(license, /Version 2.0, January 2004/)
+  assert.equal(createHash('sha256').update(license).digest('hex'), 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30')
   const notice = readFileSync(join(ROOT, 'third-party/NOTICE'), 'utf8')
-  assert.match(notice, /GPL-3.0-or-later/)
+  assert.match(notice, /Apache-2.0/)
   assert.match(notice, /apollo/i)
   assert.match(notice, /MIT License/)
 })
