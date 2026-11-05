@@ -11,7 +11,7 @@
 
 许可证：**Apache-2.0**（见 [LICENSE](LICENSE)；复用内容与第三方许可见 [third-party/NOTICE](third-party/NOTICE)）。
 
-> 目标宿主：DSH `>=0.2.1-rc.2 <0.3.0`；Node.js `^22.19.0 || >=24.0.0`。纯 ESM，无构建步骤。
+> 目标宿主：DSH `0.2.2-rc.1`；Node.js `>=24.9.0`。纯 ESM，无构建步骤。
 
 > **命名偏差**：S1 Spec 最初写的是 unscoped 包名/行名 `dsh-better-subagent`；该 npm 名已被其他发布者占用，经用户批准改为 scoped 包名 `@menghuan1918/dsh-better-subagent`。bundle 行 id 仍为 `dsh-better-subagent`，行 name 必须是 scoped 包名（Loader 把它当模块 specifier，client closure id 也必须等于它）；浏览器半边同时保留 S1 的 `dsh-better-subagent#dsh-better-subagent` 短键作兼容别名。
 
@@ -21,7 +21,7 @@
 
 ```sh
 # 新建/选择 profile；插件会向该 profile 注入一行 dsh-better-subagent
-dsh plugin --profile <profile> add @menghuan1918/dsh-better-subagent
+dsh plugin --profile <profile> add @menghuan1918/dsh-better-subagent@0.4.0
 
 # 启动
 dsh --profile <profile>
@@ -30,7 +30,7 @@ dsh --profile <profile>
 本插件**不依赖 Apollo**，也不会安装或加载 Apollo。设置出现在
 **Plugins → @menghuan1918/dsh-better-subagent → dsh-better-subagent 行**。
 
-> 当前补丁版本为 `0.1.1`，修复异步日志观察期间的跨回合等待竞态，以及超过启动宽限后的状态重读。宿主集成验证见 `scripts/runtime-smoke.mjs`；npm 发布结果以对应 GitHub Release 与 registry 为准。
+> 当前源码版本为 `0.4.0`，仅支持 DSH `0.2.2-rc.1`，保留原生 activation、CLI 续接身份与基于 runId 的跨回合等待。宿主集成验证见 `scripts/runtime-smoke.mjs`；npm 发布结果以对应 GitHub Release 与 registry 为准。
 
 ### 与 Apollo 一起使用（集成由 Apollo 负责）
 
@@ -153,13 +153,15 @@ Apollo 的通用工程原则、完整工作流 skills、job/general 守卫措辞
 
 ## 验证状态（诚实记录）
 
-本仓库验证过的内容：
+本仓库针对 DSH `0.2.2-rc.1` 验证过的内容（不含 npm 发布与现有 GUI）：
+
+- next tools admission：`when=false` 或未接纳的原生工具不能触发 CLI 路由或发布 CLI 目录；仅原生 `local=false` 的 external end 可在无本地 Session 时结算。本地 Session 不可读时返回不可确认，不伪报成功。
 
 - `npm test`：配置规约、CLI argv/JSONL、身份 KV 命名空间与重开、adapter 生命周期/回滚/游标/卸载、子代理路由/范围/守卫/fork 拒绝/白名单/cwd/预检、wait 契约/批量/超时/宽限/无 inbox 手术 + **跨回合回归**、子代理退出守卫、路由/信任边界/别名、客户端表单/四个槽键、manifest/patch/exports/发布工作流。
 - 真实宿主临时 profile 启动（headless，安装后无 Apollo）：宿主工具注册、per-agent 提示词 section 真实装配、真实 `dsh-settings` 投影（schema 与 value 含全部 volatile 字段）与 volatile 热更新（`childExitGuard` 与 `trustedHosts` 均经真实 settings 写入生效，`trustedHosts` 在伪造 Host 的下一次请求放行）、真实 `webServer` 上的 canonical + `/apollo/api` 别名路由（200/403/404/405）、原生 create → `wait_subagent` → 结算通知携带子代理正文 → 续接 → 等待 → 运行中子代理退出守卫真实拦截并继续回合 → 中断 → 等待。
 - 真实 Claude CLI（本机已登录）临时 profile 端到端，含**同 profile/DSH_HOME 的进程内宿主重启**（dispose 宿主 fiber 后在同一进程、同一 profile 重新 boot，不是另一个 OS 进程）：创建 CLI 子代理 → 等待 → 落盘 `apollo_cli_<hash>/sessions/<id>.json` → 重新 boot、恢复父 Agent → cold resume 同一 CLI 子代理（remoteId 不变）→ 等待 → 运行中中断 → 等待；plan 权限、无工具，会消耗少量 Claude 额度。
 - 真实 JSON storage backend（宿主 `@deepseek-ai/dsh-storage-json`）的 per-record KV 关闭/重开测试（`tests/cli-sessions.test.mjs`）。
-- **未验证**：Codex CLI 端到端（本机 `codex login status` = `Not logged in`，属于凭据阻塞）；从 npm 正式发布后的 `dsh plugin add` 安装路径与真实 Web GUI 设置页点击（本仓库尚无发布）；Apollo + 本插件组合运行（S4）。
+- **未验证**：Codex CLI 端到端（本机 `codex login status` = `Not logged in`，属于凭据阻塞）；真实 Web GUI 设置页点击与 `dsh plugin add` 的交互安装流程。Apollo 组合与正式 registry 干净安装证据由 Apollo 对应 Release 报告记录。
 
 复现命令见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 

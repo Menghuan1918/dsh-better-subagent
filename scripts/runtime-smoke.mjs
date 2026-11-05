@@ -45,8 +45,9 @@ process.env.DSH_HOME = home
 process.env.DSH_TELEMETRY_DISABLED = '1'
 
 const A = await import(pathToFileURL(join(dirname(dsh), 'dsh-app-boot/lib/index.js')))
+const { PROFILE_TEMPLATES } = await import(pathToFileURL(join(dirname(dsh), 'dsh-official-bundles/lib/index.js')))
 const dir = A.resolveProfileDir('it', home)
-A.initProfile(dir, [...A.PROFILE_TEMPLATES.headless.bundles, packageName])
+A.initProfile(dir, [...PROFILE_TEMPLATES.headless.bundles, packageName])
 const packageFile = join(dir, 'package.json')
 const manifest = JSON.parse(await readFile(packageFile, 'utf8'))
 const modules = join(dir, 'node_modules')
@@ -69,6 +70,7 @@ await writeFile(join(dir, 'cordis.patch.yml'), JSON.stringify([
   // Do not auto-run the headless one-shot task; drive the Agent directly.
   { id: 'headless-startup', disabled: true },
   { id: 'headless-runner', disabled: true },
+  { id: 'sandbox-policy', inject: [], config: { mode: 'workspace-write', workspaceRoot: home, additionalWritableRoots: [] } },
   { id: 'credentials', disabled: false, config: { watch: false } },
   // A real HTTP listener on a random loopback port for the read-only API test.
   { insert: [{ id: 'webserver', name: '@deepseek-ai/dsh-host-webserver', config: { host: '127.0.0.1', port: 0 } }] },
@@ -95,7 +97,12 @@ const { runProfile } = await import(pathToFileURL(join(dsh, 'lib/profile-boot.js
 const { createUserMessage } = await import(pathToFileURL(join(dirname(dsh), 'dsh-llm/lib/index.js')))
 let ctx
 try {
-  const booted = await runProfile({ profile: 'it', patchFiles: [], args: [], environment: A.loadLayeredEnv('dsh') })
+  const resolvedProfile = A.loadProfile('dsh', 'it', join(dir, 'package.json'), home)
+  assert.deepEqual(resolvedProfile.skippedBundles, [])
+  assert.equal(resolvedProfile.layers.find((layer) => layer.packageName === packageName)?.packageDir, plugin, 'load the isolated copied plugin, never an ancestor checkout')
+  assert.equal(JSON.parse(await readFile(join(plugin, 'package.json'), 'utf8')).version, '0.4.0')
+  assert.equal(JSON.parse(await readFile(join(dsh, 'package.json'), 'utf8')).version, '0.2.2-rc.1')
+  const booted = await runProfile({ profile: 'it', resolvedProfile, patchFiles: [], args: [], environment: A.loadLayeredEnv('dsh') })
   ctx = booted.ctx
 
   // Scripted provider. `slowSessions` hold a turn open until aborted; the
@@ -103,6 +110,10 @@ try {
   const slowSessions = new Set()
   const scriptedStreams = new Set()
   const childIds = new Set()
+  const starts = new Map()
+  const ends = new Map()
+  ctx.on('subagent/start', (info) => { starts.set(info.id, info) })
+  ctx.on('subagent/end', (info) => { ends.set(info.id, info) })
   let parentId
   let guardTarget
   let guardSeen = false
@@ -139,6 +150,7 @@ try {
     async *stream(options) {
       scriptedStreams.add(options.sessionId)
       if (slowSessions.has(options.sessionId)) {
+        options.signal?.throwIfAborted()
         await new Promise((resolveWait, reject) => {
           const timer = setTimeout(resolveWait, 30_000)
           options.signal?.addEventListener('abort', () => {
@@ -185,11 +197,44 @@ try {
   }
   const call = async (name, args) => {
     tool(name)
-    const result = await ctx.tools.execute({ name, arguments: args, agent, signal: new AbortController().signal, callId: randomUUID() })
+    const signal = new AbortController().signal
+    const toolSet = await ctx.tools.resolve({ agent, modelSelection: agent.model.current(), signal })
+    let result
+    try {
+      const batch = await ctx.tools.execute({
+        calls: [{ type: 'tool-call', id: randomUUID(), name, arguments: JSON.stringify(args) }],
+        agent, signal, toolSet,
+      })
+      result = batch.results[0].result
+    } finally { toolSet.dispose() }
     assert.equal(result.isError, false, `${name} failed: ${JSON.stringify(result.error ?? result.content)}`)
     return result.value
   }
   const disposeLease = (lease) => { try { lease?.[Symbol.dispose]?.() } catch { /* released */ } }
+
+  // A conditional native registration must be admitted before CLI around-dispatch.
+  const childrenBeforeAdmission = await ctx.subagents.listChildren(agent.id)
+  const stopConditional = agent.ctx.tools.register({ ...tool('subagent') }, { when: () => false })
+  const admissionSignal = new AbortController().signal
+  const deniedTools = await ctx.tools.resolve({ agent, modelSelection: agent.model.current(), signal: admissionSignal })
+  try {
+    const denied = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: randomUUID(), name: 'subagent', arguments: JSON.stringify({ provider: 'codex', description: 'must not start', prompt: 'must not run' }) }],
+      agent, signal: admissionSignal, toolSet: deniedTools,
+    })
+    assert.equal(denied.results[0].result.isError, true)
+    assert.equal(denied.results[0].result.error.info.code, 'UNKNOWN_TOOL')
+    assert.deepEqual(await ctx.subagents.listChildren(agent.id), childrenBeforeAdmission)
+  } finally {
+    deniedTools.dispose()
+    stopConditional()
+  }
+  assert.equal(ctx.tools.get('subagent', agent, deniedTools), undefined, 'disposed admissions cannot be reused')
+  const cliModels = await ctx.llm.listModels('apollo-cli-codex')
+  assert.deepEqual(cliModels.map(({ id }) => id), ['noop'])
+  const cliModelInfo = await ctx.llm.resolveModelInfo('apollo-cli-codex', 'noop')
+  assert.deepEqual(cliModelInfo.reasoning.efforts.map(({ id }) => id), ['low'])
+  assert.equal(cliModelInfo.reasoning.defaultEffort, 'low')
 
   // ── row, tool and per-Agent prompt sections on the live host ──────────────
   assert.equal(typeof tool('wait_subagent').execute, 'function')
@@ -303,10 +348,11 @@ try {
   slowSessions.add(guardTarget)
   childIds.add(guardTarget)
   const runningDeadline = Date.now() + 10_000
-  while (ctx.agents.get(guardTarget)?.status !== 'running' && Date.now() < runningDeadline) {
+  while ((ctx.agents.get(guardTarget)?.status !== 'running' || !scriptedStreams.has(guardTarget)) && Date.now() < runningDeadline) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 20))
   }
   assert.equal(ctx.agents.get(guardTarget)?.status, 'running', 'guarded child must be running before the parent turn')
+  assert.ok(scriptedStreams.has(guardTarget), 'the scripted child stream must start before interruption')
   const parentTurnEnded = new Promise((resolveTurn, rejectTurn) => {
     const timer = setTimeout(() => { off(); rejectTurn(new Error('parent turn did not finish')) }, 20_000)
     const off = ctx.on('session/event', (session, event) => {
@@ -344,7 +390,13 @@ try {
     false,
     'no managed CLI identity record must exist (no CLI child execution)',
   )
-  for (const id of childIds) assert.equal(scriptedStreams.has(id), true, `child ${id} ran through the native/scripted route, not a CLI adapter`)
+  for (const id of childIds) {
+    assert.equal(scriptedStreams.has(id), true, `child ${id} ran through the native/scripted route, not a CLI adapter`)
+    assert.equal(starts.get(id)?.local, true, 'native local activation metadata')
+    assert.equal(ends.get(id)?.local, true, 'native local settlement metadata')
+    assert.equal(ends.get(id)?.runId, starts.get(id)?.runId, 'paired native activation identity')
+    assert.equal(ends.get(id)?.provider, 'spawn')
+  }
 
   const result = {
     passed: true,
@@ -353,10 +405,13 @@ try {
     checks: [
       'real-profile-boot',
       'host-plane-wait-subagent',
+      'conditional-tool-admission-before-cli-routing',
+      'cli-model-catalog-and-exact-metadata',
       'per-agent-prompt-sections',
       'settings-projection-and-hot-volatile-update',
       'real-webserver-canonical-and-apollo-route',
       'native-create-wait',
+      'native-local-and-runid-settlement-fields',
       'settlement-notice-carries-closing-content',
       'continue-wait',
       'child-exit-guard-real-turn-stopping',

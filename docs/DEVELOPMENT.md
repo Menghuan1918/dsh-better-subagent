@@ -7,7 +7,7 @@
 - 纯 ESM、无构建步骤；宿主入口 `src/index.js`，浏览器入口 `src/client.js`。
 - `package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`；`dsh.client.platform = "web"`。
 - `files` 白名单：`src`、`docs`、`cordis.patch.yml`、`README.md`、`LICENSE`、`third-party`。测试、脚本、设计 Spec、凭据、临时 profile 都不进发布包。
-- 依赖：运行时只直接 import `@deepseek-ai/schemastery`；其余 DSH 包是 peer（`>=0.2.1-rc.2 <0.3.0`），由宿主运行环境提供，服务全部经 `ctx` 获取。
+- 依赖：运行时只直接 import `@deepseek-ai/schemastery`；其余 DSH 包是精确 peer（`0.2.2-rc.1`），由宿主运行环境提供，服务全部经 `ctx` 获取。
 - 浏览器半边只 `require('react')`，不 import 任何 DSH client 包；样式全部使用宿主主题 token（`--dsw-alias-*`），不写 DOM。
 
 ## 2. 宿主行与配置
@@ -70,7 +70,7 @@
 4. 匹配 end 后再读 durable 日志（`ctx.sessionQuery.observeSession(childId)`）：只 fold `inheritedEventCount` 之后的**子代理自有**事件（fork 前缀的父 turn/end、splice 不属于该 child）；
 5. fold `agent/inbox/spliced` 的 `inserted`/`removedCount`/`outcome:'canceled'`，按 target（`next-turn`/`next-step`）维护队列长度：turn claim（`removedCount` 无 outcome）与取消删除都会清掉排队计数；`pending = nextTurn + nextStep > 0`；
 6. 匹配 end + `pending > 0` → 继续等（resident idle child 收到新输入时没有新 `subagent/start`，这是唯一的当前回合证明）；`pending === 0` → done；
-7. durable 不可读：child 已不在 registry → 用 start/end 对 settle（external provider 可能没有本地 DSH 会话）；child 仍 live → `could not be confirmed`，不伪报成功；
+7. durable 不可读：只有原生 `subagent/end.local === false` 的 external provider 可用匹配的 start/end 对 settle；本地 child（即使已不在 registry）仍返回 `could not be confirmed`，不把不可读会话伪报成功；
 8. 无 end 时：`pending > 0` 继续等；不在 registry 且自有日志有 `turn/end` → “已在此次等待前结束”的说明（不是旧 done）；30s 启动宽限后仍无法证明 → not-started/不可确认行。
 
 `observeSession` 是异步边界：读取返回后必须重新检查 live running，并确认 start/end 记录仍是读取前的同一代（事件每次替换记录对象，即使 runId 相同也能识别新的 end）。跨代读取不参与完成判断，由现有 250ms poller 重读；不立即循环重试。否则新回合在读取期间 claim 掉 pending 后，会被旧 end 误判为 done。
@@ -154,7 +154,7 @@ npm ci --dry-run
 | `tests/client.test.mjs` | 真实 React hooks/元素树：四个槽键、表单控件、保存/冲突/只读、发现、分档 |
 | `tests/assembly.test.mjs` | manifest、bundle patch、exports、client closure id/键、发布工作流、包白名单、NOTICE |
 
-真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`（检查：真实 settings 投影/volatile 热更新、真实 webServer canonical+别名路由、结算通知正文、childExitGuard 真实 turn-stopping），CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`（检查：真实 CLI 创建/等待、身份记录落盘、同 profile/DSH_HOME 的进程内宿主重启+父 Agent 恢复、KV 重开+cold CLI resume、remoteId 稳定、中断；不是独立 OS 进程），并在临时 `DSH_HOME/results.json` 留下检查项。
+真实宿主 smoke 会打印 `BETTER_SUBAGENT_RUNTIME_SMOKE_PASSED`（检查：精确宿主/隔离包路径、真实 step admission 阻止 CLI 越权启动、CLI advisory model catalog/精确 metadata、原生 local/runId 字段、真实 settings 投影/volatile 热更新、真实 webServer canonical+别名路由、结算通知正文、childExitGuard 真实 turn-stopping；模型输出由明确的 scripted adapter 提供，不是在线 LLM），CLI smoke 会打印 `BETTER_SUBAGENT_CLI_SMOKE_PASSED`（检查：真实 CLI 创建/等待、身份记录落盘、同 profile/DSH_HOME 的进程内宿主重启+父 Agent 恢复、KV 重开+cold CLI resume、remoteId 稳定、中断；不是独立 OS 进程），并在临时 `DSH_HOME/results.json` 留下检查项。
 
 CLI smoke 会把 DSH profile 放在临时目录，但不会改 Claude/Codex 的原生 home（改 `CLAUDE_CONFIG_DIR` 会改变凭据/keychain 查找）；真实 CLI 自己的原生会话因此会留在该 CLI 的用户目录下，脚本不清理这些原生会话。
 

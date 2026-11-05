@@ -526,10 +526,23 @@ test('matched end is terminal when no DSH session is readable and the child is n
   const ctx = makeCtx({ children: [{ id: 'child-1' }] })
   ctx.sessionQuery.observeSession = async () => { throw new Error('external child has no DSH session') }
   fireStart(ctx, { id: 'child-1', runId: 'run-ext' })
-  fireEnd(ctx, { id: 'child-1', runId: 'run-ext', stopReason: 'completed' })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-ext', local: false, provider: 'external', stopReason: 'completed' })
   const out = await ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
   assert.equal(out, DONE('child-1'))
   assert.doesNotMatch(out, /could not be confirmed/)
+})
+
+test('local end without a live Agent still requires readable durable state', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] })
+  const ctx = makeCtx({ children: [{ id: 'child-1' }] })
+  ctx.sessionQuery.observeSession = async () => { throw new Error('local storage unavailable') }
+  fireStart(ctx, { id: 'child-1', runId: 'run-local', local: true, provider: 'spawn' })
+  fireEnd(ctx, { id: 'child-1', runId: 'run-local', local: true, provider: 'spawn', stopReason: 'completed' })
+  const pending = ctx.getTool().execute({ subagent_id: ['child-1'] }, makeExec())
+  await flushMicrotasks()
+  t.mock.timers.tick(START_GRACE_MS + 1000)
+  await flushMicrotasks()
+  assert.match(await pending, /could not be confirmed/)
 })
 
 test('timeout_ms below 15 minutes is raised to 15 minutes', async (t) => {

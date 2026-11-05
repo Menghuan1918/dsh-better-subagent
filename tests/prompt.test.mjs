@@ -115,6 +115,39 @@ test('scope: eng preset or global=true; explicit eng=false wins for non-eng pres
   })
 })
 
+test('patient waiting rules render for default engineering presets only', async () => {
+  await withConfig(undefined, undefined, async () => {
+    const ctx = makeCtx()
+    for (const preset of ['eng', 'eng-ptc']) {
+      const agent = ctx.create({ preset })
+      const text = textOf(agent, 'better-subagent:delegation')
+      assert.match(text, /Do not repeatedly[^.\n]*send_message/)
+      assert.match(text, /poll list_agents frequently[^.\n]*interrupt_agent/)
+      assert.match(text, /Intervene only[^.\n]*new information[^.\n]*corrections[^.\n]*failure or blockage[^.\n]*user request to stop/)
+      assert.match(text, /independent work first/)
+      assert.match(text, /truly depends[^.\n]*wait patiently with wait_subagent[^.\n]*all needed results together/)
+      assert.match(text, /wait_subagent timeout[^:\n]*still running[^:\n]*not a failure/)
+      assert.match(text, /wait again or do independent work/)
+      assert.match(text, /Do not re-dispatch or take over solely because[^.\n]*long time/)
+    }
+    const standard = ctx.create({ preset: 'standard' })
+    assert.equal(textOf(standard, 'better-subagent:delegation'), '')
+  })
+})
+
+test('patient waiting rules follow the live global switch even when eng is disabled', async () => {
+  await withConfig('{"subagents":{"eng":false,"global":false}}', undefined, async () => {
+    const ctx = makeCtx()
+    const standard = ctx.create({ preset: 'standard' })
+    assert.equal(textOf(standard, 'better-subagent:delegation'), '')
+    liveConfig.subagents.global = true
+    assert.match(textOf(standard, 'better-subagent:delegation'), /wait_subagent timeout[^\n]*not a failure/)
+    liveConfig.subagents.global = false
+    assert.equal(textOf(standard, 'better-subagent:delegation'), '')
+    assert.equal(standard.sections.length, 3)
+  })
+})
+
 test('model tiers render from live config without re-registration', async () => {
   await withConfig('{}', undefined, async () => {
     const ctx = makeCtx()

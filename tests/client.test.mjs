@@ -191,7 +191,15 @@ const byId = (renderer, id) => renderer.root.findAll((node) => host(node) && nod
 const byLabel = (renderer, label) => renderer.root.findAll((node) => host(node) && node.props?.['aria-label'] === label)[0]
 const byType = (renderer, type) => renderer.root.findAllByType(type)
 const saveButton = (renderer) => byType(renderer, 'button').find((node) => node.props['data-variant'] === 'primary')
-const optionsOf = (node) => node.findAllByType('option').map((option) => option.props.value)
+const optionItems = (node) => node.parent.findAll((item) => host(item) && item.props.role === 'option')
+const optionsOf = (node) => optionItems(node).map((option) => option.props['data-value'])
+function setControlValue(node, value) {
+  if (node.props.role === 'combobox') {
+    const option = optionItems(node).find((item) => item.props['data-value'] === value)
+    assert.ok(option, 'option must be offered by the actual control: ' + value)
+    option.props.onClick()
+  } else node.props.onChange({ target: { value } })
+}
 
 function textOf(node) {
   if (node === null || node === undefined) return ''
@@ -260,7 +268,9 @@ test('ready：真实渲染表单 + 唯一 <style>，权限档与 src/config.js �
   const styles = byType(renderer, 'style')
   assert.equal(styles.length, 1)
   assert.match(styles[0].children[0], /\.bs-switch/)
-  assert.match(styles[0].children[0], /--dsw-alias-button-primary-fill/)
+  assert.match(styles[0].children[0], /--cfg-accent:#3388BB/ )
+  assert.match(styles[0].children[0], /--cfg-accent-solid:#20709e/)
+  assert.match(styles[0].children[0], /\[data-ds-dark-theme\] \.bs-root\{--cfg-accent:#4eb0e8/ )
   assert.equal(renderer.root.findAll((node) => String(node.props.className ?? '').includes('bs-root')).length, 1)
 
   // 单一页面标题；字段提示保留为无障碍描述，不再逐行显示信息图标。
@@ -269,14 +279,10 @@ test('ready：真实渲染表单 + 唯一 <style>，权限档与 src/config.js �
   assert.equal(textOf(titles[0].props.children), 'title')
   const header = renderer.root.findAll((node) => host(node) && node.props.className === 'bs-header')[0]
   assert.equal(header.findAllByType('p').length, 0, 'header has no generic subtitle')
-  const footer = renderer.root.findAll((node) => host(node) && node.props.className === 'bs-footer')[0]
-  assert.equal(footer.children[0].props.className, 'bs-status')
-  assert.equal(textOf(footer.children[1]), 'reset')
-  assert.equal(footer.children[2].props['data-variant'], 'primary', 'Save comes last in DOM and keyboard order')
   const routineHints = byType(renderer, 'p').filter((node) => /executableHint|profileHint/.test(textOf(node)))
   assert.ok(routineHints.length > 0, 'supplementary help remains available')
   for (const hint of routineHints) assert.equal(hint.props.className, 'bs-srOnly', 'routine descriptions stay out of the visual form')
-  assert.equal(byType(renderer, 'details').length, 0, 'no per-field information disclosures')
+  assert.ok(byType(renderer, 'details').every((node) => node.props.className === 'bs-advanced'), 'only task-level advanced disclosures remain')
   const described = renderer.root.findAll((node) => host(node) && typeof node.props['aria-describedby'] === 'string')
   assert.ok(described.length >= 2, 'retained hints associate with their controls')
   // 模型行窄屏标签：隐藏列头语义由每格 label 承担。
@@ -284,13 +290,18 @@ test('ready：真实渲染表单 + 唯一 <style>，权限档与 src/config.js �
   assert.ok(cellLabels.length >= 3, 'model rows carry per-cell labels for narrow layout')
   assert.equal(byId(renderer, 'bs-child-exit-guard').props['aria-checked'], false)
   assert.deepEqual(optionsOf(byId(renderer, 'bs-codex-permission')), [...CODEX_PERMISSION_MODES])
+  assert.equal(byId(renderer, 'bs-claude-permission'), undefined)
+  await page.run(async () => byId(renderer, 'bs-claude-enabled').props.onClick())
   assert.deepEqual(optionsOf(byId(renderer, 'bs-claude-permission')), [...CLAUDE_PERMISSION_MODES])
+  await page.run(async () => byId(renderer, 'bs-claude-enabled').props.onClick())
   // 探针成功：profile 选项来自 host 探针，可执行文件显示解析结果。
   assert.equal(byId(renderer, 'bs-codex-profile').type, 'input')
-  assert.equal(byId(renderer, 'bs-codex-profile').props.list, 'bs-codex-profiles')
-  assert.deepEqual(optionsOf(byId(renderer, 'bs-codex-profiles')), ['default', 'work'])
+  assert.equal(byId(renderer, 'bs-codex-profile').props.list, undefined)
+  assert.deepEqual(byId(renderer, 'bs-codex-profiles').findAllByType('button').map((button) => textOf(button)), ['default', 'work'])
+  assert.equal(byType(renderer, 'select').length, 0)
+  assert.equal(byType(renderer, 'datalist').length, 0)
   assert.match(pageText(renderer), /\/opt\/bin\/codex/)
-  assert.equal(saveButton(renderer).props.disabled, true)
+  assert.equal(saveButton(renderer), undefined)
 
   // 重渲染仍是同一个样式节点（不重复注入）。
   await page.update()
@@ -301,11 +312,11 @@ test('只读：writable=false 与 mode=memory 都禁用写入控件且不写入'
   for (const form of [{ writable: false }, { mode: 'memory' }]) {
     const page = await mountPage({ form })
     const renderer = page.renderer
-    const controls = renderer.root.findAll((node) => ['input', 'select', 'textarea'].includes(node.type) || node.props.role === 'switch' || node.props['data-variant'] === 'primary' || node.props.id?.endsWith('-discover'))
+    const controls = renderer.root.findAll((node) => ['input', 'textarea'].includes(node.type) || node.props.role === 'combobox' || node.props.role === 'switch' || node.props['data-variant'] === 'primary' || node.props.id?.endsWith('-discover'))
     assert.ok(controls.length > 5)
     for (const control of controls) assert.equal(control.props.disabled, true, String(control.type))
     assert.match(pageText(renderer), /readonly/)
-    await page.run(async () => { saveButton(renderer).props.onClick() })
+    assert.equal(saveButton(renderer), undefined)
     assert.deepEqual(page.controller.calls, [])
   }
 })
@@ -317,9 +328,8 @@ test('同一 act 内连续编辑 → 单次 mutate（真实 hooks 状态队列�
   await act(async () => {
     byId(renderer, 'bs-child-exit-guard').props.onClick()
     byId(renderer, 'bs-scope-global').props.onClick()
-    byId(renderer, 'bs-codex-permission').props.onChange({ target: { value: 'workspace-write' } })
-    byId(renderer, 'bs-codex-default-model').props.onChange({ target: { value: 'gpt-5.1' } })
-    byLabel(renderer, 'modelIdPlaceholder 1').props.onChange({ target: { value: 'gpt-5.1' } })
+    setControlValue(byId(renderer, 'bs-codex-permission'), 'workspace-write')
+    setControlValue(byLabel(renderer, 'modelIdPlaceholder 1'), 'gpt-5.1')
   })
 
   assert.deepEqual(page.controller.calls, [])
@@ -339,7 +349,7 @@ test('同一 act 内连续编辑 → 单次 mutate（真实 hooks 状态队列�
   ])
   await page.update()
   assert.match(pageText(renderer), /saved/)
-  assert.equal(saveButton(renderer).props.disabled, true)
+  assert.equal(saveButton(renderer), undefined)
 })
 
 test('saving 与 conflict：挂起态、false 回退宿主值、抛错保留草稿', async () => {
@@ -367,7 +377,7 @@ test('saving 与 conflict：挂起态、false 回退宿主值、抛错保留草�
   assert.equal(refusing.calls.length, 1)
   assert.equal(byId(back, 'bs-child-exit-guard').props['aria-checked'], false)
   assert.match(pageText(back), /conflict/)
-  assert.equal(saveButton(back).props.disabled, true)
+  assert.equal(saveButton(back), undefined)
 
   // 抛错：保留草稿、显示失败详情、可再次保存。
   const failing = makeForm({ behavior: 'reject' })
@@ -387,7 +397,7 @@ test('模型 effort 关联与启用校验：缓冲保住逗号、失配清空、
   const renderer = page.renderer
 
   // effort 文本缓冲：未输完的逗号不被吃掉；默认 effort 失配即清空。
-  await page.run(async () => { byLabel(renderer, 'modelEffortsPlaceholder 1').props.onChange({ target: { value: 'low, mid, ' } }) })
+  await page.run(async () => { setControlValue(byLabel(renderer, 'modelEffortsPlaceholder 1'), 'low, mid, ') })
   assert.equal(byLabel(renderer, 'modelEffortsPlaceholder 1').props.value, 'low, mid, ')
   assert.equal(byLabel(renderer, 'modelDefaultEffort 1').props.value, '')
   assert.deepEqual(optionsOf(byLabel(renderer, 'modelDefaultEffort 1')), ['', 'low', 'mid'])
@@ -397,7 +407,7 @@ test('模型 effort 关联与启用校验：缓冲保住逗号、失配清空、
   assert.match(pageText(renderer), /invalidDefaultEffort.*codexTitle/)
 
   // 选定默认 effort 后可保存。
-  await page.run(async () => { byLabel(renderer, 'modelDefaultEffort 1').props.onChange({ target: { value: 'mid' } }) })
+  await page.run(async () => { setControlValue(byLabel(renderer, 'modelDefaultEffort 1'), 'mid') })
   assert.equal(saveButton(renderer).props.disabled, false)
   await page.run(async () => { saveButton(renderer).props.onClick() })
   assert.deepEqual(page.controller.calls[0].ops, [{
@@ -407,7 +417,7 @@ test('模型 effort 关联与启用校验：缓冲保住逗号、失配清空、
   }])
 
   // 清空默认模型 / 删掉全部模型：都阻止保存并给出明确原因。
-  await page.run(async () => { byId(renderer, 'bs-codex-default-model').props.onChange({ target: { value: '' } }) })
+  await page.run(async () => { setControlValue(byId(renderer, 'bs-codex-default-model'), '') })
   assert.equal(saveButton(renderer).props.disabled, true)
   assert.match(pageText(renderer), /invalidDefaultModel/)
   await page.run(async () => { byLabel(renderer, 'modelRemove').props.onClick() })
@@ -529,6 +539,7 @@ test('自动发现：按 cli 请求、保留已有模型、只追加新 id、空
     assert.deepEqual(optionsOf(byId(renderer, 'bs-codex-default-model')), ['', 'gpt-5', 'gpt-5.1'])
     assert.equal(byId(renderer, 'bs-codex-default-model').props.value, 'gpt-5')
 
+    await page.run(async () => byId(renderer, 'bs-claude-enabled').props.onClick())
     await page.run(async () => { await byId(renderer, 'bs-claude-discover').props.onClick() })
     assert.equal(byLabel(renderer, 'modelIdPlaceholder 1').props.value, 'gpt-5')
     assert.equal(byId(renderer, 'bs-claude-default-model').props.value, 'claude-opus-5-5')
@@ -544,6 +555,11 @@ test('自动发现：按 cli 请求、保留已有模型、只追加新 id、空
           { id: 'gpt-5', efforts: ['low', 'high'], defaultEffort: 'high' },
           { id: 'gpt-5.1', efforts: ['low', 'high'], defaultEffort: 'high' },
         ],
+      },
+      {
+        op: 'set',
+        path: ['subagents', 'claude', 'enabled'],
+        value: true,
       },
       {
         op: 'set',
@@ -583,7 +599,7 @@ test('自动发现失败：显示宿主给的 code（含 HTTP 状态），不改
     assert.match(pageText(renderer), /discoverFailed/)
     assert.match(pageText(renderer), /discoverReasonUnauthorized/)
     assert.match(pageText(renderer), /401/)
-    assert.equal(saveButton(renderer).props.disabled, true)
+    assert.equal(saveButton(renderer), undefined)
     assert.deepEqual(page.controller.calls, [])
   } finally {
     restore()
@@ -615,7 +631,7 @@ function useRoutes(routes) {
   return { requests, restore }
 }
 
-const labelsOf = (node) => node.findAllByType('option').map((option) => textOf(option.props.children))
+const labelsOf = (node) => optionItems(node).map((option) => textOf(option.findByProps({ className: 'bs-optionLabel' }).props.children))
 
 test('模型分档：候选来自白名单，effort 有列表时下拉、否则文本，保存整档写入', async () => {
   const { requests, restore } = useRoutes(ROUTES)
@@ -624,27 +640,27 @@ test('模型分档：候选来自白名单，effort 有列表时下拉、否则�
     const renderer = page.renderer
     await page.run(async () => {})
     assert.deepEqual(requests, ['/better-subagent/api/routes'])
-    assert.match(pageText(renderer), /tiersTitle/)
+    assert.match(pageText(renderer), /tierFast|tierQuality/)
     assert.doesNotMatch(pageText(renderer), /tiersInactive|routesError/)
 
     const fast = byId(renderer, 'bs-tier-fast-route')
     assert.deepEqual(optionsOf(fast), ['', 'deepseek-official/deepseek-flash', 'poke2api/gpt-6.1-sol'])
     assert.deepEqual(labelsOf(fast), ['tierInherit', 'deepseek-official / deepseek-flash', 'poke2api / gpt-6.1-sol'])
     assert.equal(fast.props.value, '')
-    // 沿用父会话路由时 effort 无意义：禁用。
-    assert.equal(byId(renderer, 'bs-tier-fast-effort').props.disabled, true)
+    // 沿用父会话路由时 effort 无意义：不渲染。
+    assert.equal(byId(renderer, 'bs-tier-fast-effort'), undefined)
 
-    await page.run(async () => { byId(renderer, 'bs-tier-fast-route').props.onChange({ target: { value: 'deepseek-official/deepseek-flash' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-fast-route'), 'deepseek-official/deepseek-flash') })
     const effort = byId(renderer, 'bs-tier-fast-effort')
-    assert.equal(effort.type, 'select')
+    assert.equal(effort.props.role, 'combobox')
     assert.deepEqual(optionsOf(effort), ['', 'low', 'max'])
     assert.deepEqual(labelsOf(effort), ['tierEffortDefault', 'low', 'max'])
-    await page.run(async () => { byId(renderer, 'bs-tier-fast-effort').props.onChange({ target: { value: 'max' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-fast-effort'), 'max') })
 
     // 路由没有 effort 列表：文本输入。
-    await page.run(async () => { byId(renderer, 'bs-tier-quality-route').props.onChange({ target: { value: 'poke2api/gpt-6.1-sol' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-quality-route'), 'poke2api/gpt-6.1-sol') })
     assert.equal(byId(renderer, 'bs-tier-quality-effort').type, 'input')
-    await page.run(async () => { byId(renderer, 'bs-tier-quality-effort').props.onChange({ target: { value: ' high ' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-quality-effort'), ' high ') })
 
     assert.equal(saveButton(renderer).props.disabled, false)
     await page.run(async () => { await saveButton(renderer).props.onClick() })
@@ -655,9 +671,9 @@ test('模型分档：候选来自白名单，effort 有列表时下拉、否则�
 
     // 换路由清空 effort；改回沿用父会话路由整档清空。
     await page.update()
-    await page.run(async () => { byId(renderer, 'bs-tier-fast-route').props.onChange({ target: { value: 'poke2api/gpt-6.1-sol' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-fast-route'), 'poke2api/gpt-6.1-sol') })
     assert.equal(byId(renderer, 'bs-tier-fast-effort').props.value, '')
-    await page.run(async () => { byId(renderer, 'bs-tier-fast-route').props.onChange({ target: { value: '' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-fast-route'), '') })
     await page.run(async () => { await saveButton(renderer).props.onClick() })
     assert.deepEqual(page.controller.calls[1].ops, [
       { op: 'set', path: ['tiers', 'fast'], value: { provider: '', model: '', reasoningEffort: '' } },
@@ -688,7 +704,7 @@ test('模型分档：已存路由不在白名单 → 标注并阻止保存；改
     await page.run(async () => { await saveButton(renderer).props.onClick() })
     assert.deepEqual(page.controller.calls, [])
 
-    await page.run(async () => { byId(renderer, 'bs-tier-fast-route').props.onChange({ target: { value: '' } }) })
+    await page.run(async () => { setControlValue(byId(renderer, 'bs-tier-fast-route'), '') })
     assert.equal(saveButton(renderer).props.disabled, false)
     await page.run(async () => { await saveButton(renderer).props.onClick() })
     assert.deepEqual(page.controller.calls[0].ops, [
@@ -745,15 +761,11 @@ test('页签：键盘循环、ARIA关联、切换保留未保存输入，只读�
   await page.run(async () => tab('connection').props.onKeyDown({ key: 'ArrowRight', preventDefault() {} }))
   assert.equal(tab('general').props['aria-selected'], true)
   assert.equal(byId(renderer, 'bs-trusted-hosts').props.disabled, true)
-  await page.run(async () => byId(renderer, 'bs-open-claude').props.onClick())
-  assert.equal(tab('cli').props['aria-selected'], true)
-  assert.equal(byId(renderer, 'bs-backend-tab-claude').props['aria-selected'], true)
-  assert.equal(byId(renderer, 'bs-backend-panel-claude').props.hidden, false)
   assert.deepEqual(page.controller.calls, [])
 
   const editable = await mountPage()
   const tree = editable.renderer
-  await editable.run(async () => byLabel(tree, 'modelEffortsPlaceholder 1').props.onChange({ target: { value: 'low, high, ' } }))
+  await editable.run(async () => setControlValue(byLabel(tree, 'modelEffortsPlaceholder 1'), 'low, high, '))
   await editable.run(async () => byId(tree, 'bs-settings-tab-cli').props.onClick())
   await editable.run(async () => byId(tree, 'bs-backend-tab-claude').props.onClick())
   assert.equal(byId(tree, 'bs-backend-panel-codex').props.hidden, true)
@@ -765,7 +777,7 @@ test('连接：受信主机完整编辑、保留换行、验证格式并原子�
   const page = await mountPage()
   const renderer = page.renderer
   const text = 'proxy.example.com:8443\nlocalhost\nproxy.example.com:8443\n'
-  await page.run(async () => byId(renderer, 'bs-trusted-hosts').props.onChange({ target: { value: text } }))
+  await page.run(async () => setControlValue(byId(renderer, 'bs-trusted-hosts'), text))
   assert.equal(byId(renderer, 'bs-trusted-hosts').props.value, text)
   assert.equal(saveButton(renderer).props.disabled, false)
   await page.run(async () => saveButton(renderer).props.onClick())
@@ -781,10 +793,10 @@ test('连接：受信主机完整编辑、保留换行、验证格式并原子�
   assert.equal(byId(renderer, 'bs-settings-panel-connection').props.hidden, false)
 })
 
-test('模型默认依赖：重命名跟随默认、移除默认清空、禁用后仍可预先配置', async () => {
+test('模型默认依赖：重命名跟随默认、移除默认清空、禁用后依赖项不渲染且可保存', async () => {
   const page = await mountPage()
   const renderer = page.renderer
-  await page.run(async () => byLabel(renderer, 'modelIdPlaceholder 1').props.onChange({ target: { value: 'renamed-model' } }))
+  await page.run(async () => setControlValue(byLabel(renderer, 'modelIdPlaceholder 1'), 'renamed-model'))
   assert.equal(byId(renderer, 'bs-codex-default-model').props.value, 'renamed-model')
   assert.equal(saveButton(renderer).props.disabled, false)
   await page.run(async () => byLabel(renderer, 'modelRemove').props.onClick())
@@ -793,8 +805,8 @@ test('模型默认依赖：重命名跟随默认、移除默认清空、禁用�
   assert.equal(saveButton(renderer).props.disabled, true)
   await page.run(async () => byId(renderer, 'bs-codex-enabled').props.onClick())
   assert.equal(saveButton(renderer).props.disabled, false)
-  assert.equal(byId(renderer, 'bs-codex-permission').props.disabled, false)
-  assert.equal(byId(renderer, 'bs-codex-executable').props.disabled, false)
+  assert.equal(byId(renderer, 'bs-codex-permission'), undefined)
+  assert.equal(byId(renderer, 'bs-codex-executable'), undefined)
 })
 
 test('CLI发现：未保存路径/Profile禁用发现，保存后探针自动刷新', async () => {
@@ -807,7 +819,7 @@ test('CLI发现：未保存路径/Profile禁用发现，保存后探针自动刷
     const page = await mountPage()
     const renderer = page.renderer
     assert.equal(probes, 1)
-    await page.run(async () => byId(renderer, 'bs-codex-profile').props.onChange({ target: { value: 'custom-profile' } }))
+    await page.run(async () => setControlValue(byId(renderer, 'bs-codex-profile'), 'custom-profile'))
     assert.equal(byId(renderer, 'bs-codex-discover').props.disabled, true)
     assert.match(pageText(renderer), /saveBeforeDiscover/)
     await page.run(async () => saveButton(renderer).props.onClick())
@@ -831,7 +843,7 @@ test('模型分档：已保存但失效的effort阻止保存，点击错误进�
     const error = byType(renderer, 'button').find((node) => node.props.className?.includes('bs-errorLink'))
     await page.run(async () => error.props.onClick())
     assert.equal(byId(renderer, 'bs-settings-panel-tiers').props.hidden, false)
-    await page.run(async () => byId(renderer, 'bs-tier-fast-effort').props.onChange({ target: { value: 'max' } }))
+    await page.run(async () => setControlValue(byId(renderer, 'bs-tier-fast-effort'), 'max'))
     assert.equal(saveButton(renderer).props.disabled, false)
   } finally { restore() }
 })
@@ -855,7 +867,7 @@ test('发现中的放弃改动：迟到响应不重新写回模型草稿', async
       await pending
     })
     assert.equal(byLabel(renderer, 'modelIdPlaceholder 2'), undefined)
-    assert.equal(saveButton(renderer).props.disabled, true)
+    assert.equal(saveButton(renderer), undefined)
     assert.deepEqual(page.controller.calls, [])
   } finally { restore() }
 })
@@ -928,4 +940,123 @@ test('发现请求所有权：放弃后重试，旧结果不能清除新请求�
     assert.equal(byLabel(renderer, 'modelIdPlaceholder 2').props.value, 'current')
     assert.equal(byId(renderer, 'bs-codex-discover').props.disabled, false)
   } finally { restore() }
+})
+
+function keyEvent(key) {
+  return { key, defaultPrevented: false, stopped: false,
+    preventDefault() { this.defaultPrevented = true }, stopPropagation() { this.stopped = true } }
+}
+
+test('自绘下拉：键盘预览不写草稿，Esc只关闭弹层，提交与首字母定位有效', async () => {
+  const page = await mountPage()
+  const renderer = page.renderer
+  const control = () => byId(renderer, 'bs-codex-permission')
+  assert.equal(control().props.role, 'combobox')
+  assert.equal(control().props['aria-expanded'], false)
+  await page.run(async () => control().props.onKeyDown(keyEvent('ArrowDown')))
+  assert.equal(control().props['aria-expanded'], true)
+  assert.equal(byId(renderer, control().props['aria-controls']).props.hidden, false)
+  await page.run(async () => control().props.onKeyDown(keyEvent('End')))
+  assert.equal(byId(renderer, control().props['aria-activedescendant']).props['data-value'], 'danger-full-access')
+  assert.equal(control().props.value, 'read-only', 'keyboard preview keeps the saved selection')
+  assert.equal(saveButton(renderer), undefined)
+  const escape = keyEvent('Escape')
+  await page.run(async () => control().props.onKeyDown(escape))
+  assert.equal(escape.defaultPrevented, true)
+  assert.equal(escape.stopped, true, 'escape must not close the host settings modal')
+  assert.equal(control().props['aria-expanded'], false)
+  assert.equal(control().props.value, 'read-only')
+  await page.run(async () => control().props.onKeyDown(keyEvent('w')))
+  assert.equal(byId(renderer, control().props['aria-activedescendant']).props['data-value'], 'workspace-write')
+  await page.run(async () => control().props.onKeyDown(keyEvent('Enter')))
+  assert.equal(control().props.value, 'workspace-write')
+  assert.equal(control().props['aria-expanded'], false)
+  assert.equal(saveButton(renderer).props.disabled, false)
+  await page.run(async () => control().props.onKeyDown(keyEvent(' ')))
+  await page.run(async () => control().props.onKeyDown(keyEvent('Home')))
+  await page.run(async () => control().props.onKeyDown(keyEvent('Enter')))
+  assert.equal(saveButton(renderer), undefined, 'returning to the saved value removes all save actions')
+  assert.deepEqual(page.controller.calls, [])
+})
+
+test('保存状态：无差异不渲染保存栏，dirty/busy与真实快照一致，成功反馈独立', async () => {
+  const pending = makeForm({ behavior: 'manual' })
+  const page = await mountPage({ controller: pending })
+  const renderer = page.renderer
+  const root = () => renderer.root.findAll((node) => host(node) && node.props['data-settings-dirty'] !== undefined)[0]
+  const footer = () => renderer.root.findAll((node) => host(node) && node.props.className === 'bs-footer')[0]
+  assert.equal(root().props['data-settings-dirty'], false)
+  assert.equal(root().props['data-settings-busy'], false)
+  assert.equal(footer(), undefined)
+  await page.run(async () => byId(renderer, 'bs-child-exit-guard').props.onClick())
+  assert.equal(root().props['data-settings-dirty'], true)
+  assert.equal(footer().children[0].props.className, 'bs-status')
+  assert.equal(textOf(footer().children[1]), 'reset')
+  assert.equal(footer().children[2].props['data-variant'], 'primary', 'Save comes last in DOM and keyboard order')
+  await page.run(async () => saveButton(renderer).props.onClick())
+  assert.equal(root().props['data-settings-busy'], true)
+  assert.equal(saveButton(renderer).props['aria-busy'], true)
+  await page.run(async () => pending.finish(true))
+  await page.update()
+  assert.equal(root().props['data-settings-dirty'], false)
+  assert.equal(root().props['data-settings-busy'], false)
+  assert.equal(footer(), undefined)
+  assert.match(pageText(renderer), /saved/)
+  assert.ok(renderer.root.findAll((node) => host(node) && node.props.className === 'bs-feedback').length)
+})
+
+test('高级与依赖：默认折叠并给出非默认摘要，停用CLI保留配置，诊断使用已保存路径', async () => {
+  const page = await mountPage()
+  const renderer = page.renderer
+  const advanced = byType(renderer, 'details').filter((node) => node.props.className === 'bs-advanced')
+  assert.equal(advanced.length, 2)
+  assert.ok(advanced.every((node) => node.props.open !== true))
+  assert.match(textOf(advanced[0].findByType('summary')), /customized.*2/)
+  let restoredFocus = false
+  const target = { open: true, querySelector: () => ({ focus() { restoredFocus = true } }) }
+  const escape = { ...keyEvent('Escape'), currentTarget: target }
+  await page.run(async () => advanced[0].props.onKeyDown(escape))
+  assert.equal(escape.defaultPrevented, true)
+  assert.equal(escape.stopped, true, 'advanced disclosure closes before the host modal')
+  assert.equal(target.open, false)
+  assert.equal(restoredFocus, true)
+  const handled = { ...keyEvent('Escape'), defaultPrevented: true, currentTarget: { ...target, open: true } }
+  await page.run(async () => advanced[0].props.onKeyDown(handled))
+  assert.equal(handled.currentTarget.open, true, 'inner combobox handles Escape before the outer disclosure')
+  assert.equal(byId(renderer, 'bs-claude-permission'), undefined)
+  await page.run(async () => setControlValue(byId(renderer, 'bs-codex-executable'), '/draft/codex'))
+  const diagnostics = byId(renderer, 'bs-settings-panel-connection')
+  assert.match(textOf(diagnostics), /detected.*opt.*bin.*codex/)
+  assert.doesNotMatch(textOf(diagnostics), /draft[/]codex/)
+  assert.match(pageText(renderer), /saveBeforeDiscover/)
+  await page.run(async () => byId(renderer, 'bs-codex-enabled').props.onClick())
+  assert.equal(byId(renderer, 'bs-codex-executable'), undefined)
+  await page.run(async () => byId(renderer, 'bs-codex-enabled').props.onClick())
+  assert.equal(byId(renderer, 'bs-codex-executable').props.value, '/draft/codex')
+  const overview = byId(renderer, 'bs-open-codex')
+  assert.equal(overview.type, 'button')
+  assert.match(textOf(overview), /modelCount.*1.*gpt-5/)
+  assert.ok(overview.findByProps({ className: 'bs-overviewGlyph' }))
+})
+
+test('放弃大量改动：需要第二次点击，继续编辑后确认复位', async () => {
+  const page = await mountPage()
+  const renderer = page.renderer
+  const reset = () => byType(renderer, 'button').find((node) => ['reset', 'resetConfirm'].includes(textOf(node)))
+  await page.run(async () => {
+    byId(renderer, 'bs-child-exit-guard').props.onClick()
+    byId(renderer, 'bs-scope-global').props.onClick()
+    setControlValue(byId(renderer, 'bs-codex-profile'), 'another')
+    setControlValue(byId(renderer, 'bs-codex-permission'), 'workspace-write')
+  })
+  await page.run(async () => reset().props.onClick())
+  assert.equal(textOf(reset()), 'resetConfirm')
+  assert.equal(byId(renderer, 'bs-child-exit-guard').props['aria-checked'], true)
+  await page.run(async () => setControlValue(byId(renderer, 'bs-codex-profile'), 'edited-again'))
+  assert.equal(textOf(reset()), 'reset')
+  await page.run(async () => reset().props.onClick())
+  await page.run(async () => reset().props.onClick())
+  assert.equal(saveButton(renderer), undefined)
+  assert.equal(byId(renderer, 'bs-child-exit-guard').props['aria-checked'], false)
+  assert.deepEqual(page.controller.calls, [])
 })

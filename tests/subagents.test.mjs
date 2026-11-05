@@ -118,7 +118,7 @@ function makeCtx({ subagents = {}, agents = {}, subprocess = {}, workingDirector
     handlersOf,
     resolved,
     warnings,
-    tools: { guard: (guard) => { guards.push(guard); return () => {} } },
+    tools: { executable: () => ({}), guard: (guard) => { guards.push(guard); return () => {} } },
     on: (event, handler) => {
       handlers.set(event, handler)
       const list = handlersOf.get(event) ?? []
@@ -188,6 +188,24 @@ test('ordinary：非子代理工具调用一律 next() 委托，不短路', asyn
     assert.equal(next.calls, 1, `${name} 应委托一次`)
     assert.equal(out, upstream, `${name} 必须原样返回 next() 的结果`)
   }
+})
+
+test('admission：未接纳的 subagent / model catalog 不进入 CLI bridge', async () => {
+  const ctx = makeCtx()
+  const sessions = makeSessions()
+  const lookups = []
+  ctx.tools.executable = (...args) => { lookups.push(args); return undefined }
+  installCliRouting(ctx, makeConfig(), sessions)
+  const [handler, next] = executeHandler(ctx)
+  const agent = makeAgent()
+  const toolSet = {}
+  for (const name of ['subagent', 'list_subagent_models']) {
+    await handler({ ...makeExec(agent), name, toolSet, arguments: { provider: 'codex', description: 'denied', prompt: 'denied' } }, next)
+    assert.deepEqual(lookups.at(-1), [name, agent, toolSet])
+  }
+  assert.equal(next.calls, 2)
+  assert.deepEqual(sessions.calls, [])
+  assert.deepEqual(ctx.resolved, [])
 })
 
 test('ordinary：subagent 不带 CLI provider 时 next() 委托（原有行为保持）', async () => {

@@ -39,7 +39,9 @@ const DELEGATION_HEAD = `## Delegation
 
 const FANOUT_PTC = '- For repeated same-shaped work, dispatch all subagents inside one run_code program, then collect them with wait_subagent.'
 
-const DELEGATION_TAIL = `- When you need a subagent's result, wait patiently with wait_subagent. Do not poll or prod it with send_message; send a message only to give it genuinely new information or a correction.
+const DELEGATION_TAIL = `- Do not repeatedly prod normally running subagents with send_message, poll list_agents frequently, or interrupt them with interrupt_agent. Intervene only for substantive new information, corrections, clear failure or blockage, or a user request to stop.
+- Do independent work first; when progress truly depends on subagent results, wait patiently with wait_subagent for all needed results together.
+- A wait_subagent timeout while a subagent is still running is not a failure: wait again or do independent work. Do not re-dispatch or take over solely because it is taking a long time.
 - The main agent owns integration, review, and final verification. Subagent reports are leads, not evidence: check the actual changes yourself.
 - When a subagent ends in an error or empty result, read why, fix the cause, and re-dispatch once; take over in the main thread only if it fails again without an external blocker, and say why.`
 

@@ -80,7 +80,7 @@ export function installWaitTool(ctx) {
   const offEnd = ctx.on('subagent/end', (info) => {
     const id = info && info.id
     if (typeof id !== 'string') return
-    settled.set(id, { runId: info.runId, stopReason: info.stopReason })
+    settled.set(id, { runId: info.runId, local: info.local, stopReason: info.stopReason })
     notify(id)
   })
 
@@ -178,7 +178,9 @@ export function installWaitTool(ctx) {
         if (turns.pending) return { kind: 'pending-input' }
         return { kind: 'settled', info: end }
       }
-      return statusOf(id) === 'ready'
+      // Native `local` distinguishes an external run from an unloaded local
+      // Agent: only the external run may lack a readable durable Session.
+      return end.local === false
         ? { kind: 'settled', info: end }
         : { kind: 'unconfirmed', reason: 'state-unreadable' }
     }

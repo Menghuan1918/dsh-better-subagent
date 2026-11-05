@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
-		const { createElement: h, cloneElement, useEffect, useId, useRef, useState } = require('react');
+		const { createElement: h, cloneElement, isValidElement, useEffect, useId, useRef, useState } = require('react');
 
 		const NS = 'better-subagent';
 		// Primary key first, then the Apollo-integration compatibility keys. All
@@ -53,17 +53,42 @@ window.__ModuleLoader__.load({
 		const BACKENDS = [CODEX, CLAUDE];
 
 		const zh = {
+			advanced: "高级",
+			configureBackend: '配置 {backend}',
+			modelsEmptyTitle: '配置第一个模型',
+			effortsFirst: '先填写 effort',
+			trustedCount: '{count} 个主机',
+			behaviorTitle: '行为',
+			defaults: "默认",
+			customized: "已修改 {count} 项",
+			readonlyDiagnostics: "诊断",
+			draftPreview: "草稿预览",
+			changeCount: "{count} 项改动",
+			resetConfirm: "再次点击放弃",
+			backendOff: "启用后配置默认模型与权限。",
+			routingPreview: "路由",
+			backendsTitle: "后端",
+			tierFastTask: "探索 · 批量检查",
+			tierQualityTask: "实现 · 调试 · 审查",
+			profileChoose: "使用 Profile {profile}",
+			permissionReadOnly: "只读检查，不写入文件。",
+			permissionWrite: "可修改工作区文件，外部访问仍受限。",
+			permissionFull: "可修改文件并访问外部资源，跳过权限确认。",
+			permissionPlan: "先生成计划，执行需另行授权。",
+			permissionManual: "每次敏感操作均请求确认。",
+			permissionDontAsk: "无法自动批准的操作直接拒绝。",
+			permissionAcceptEdits: "自动允许文件修改，其它操作仍需确认。",
+			permissionAuto: "由 Claude 自动评估操作权限。",
+			permissionBypass: "跳过所有权限确认。",
+			trustedDefault: "仅 loopback",
+			modelCatalog: "模型目录",
+			diagnosticsLink: "查看连接诊断",
 			tabGeneral: "概览",
 			tabCli: "CLI",
 			tabTiers: "模型分档",
 			tabConnection: "连接",
 			details: "说明",
 			configured: "已启用",
-			modelsEmptyTitle: "配置第一个模型",
-			effortsFirst: "先填写 effort",
-			configureBackend: "配置 {backend}",
-			behaviorTitle: "运行行为",
-			connectionIntro: "查看连接状态，管理只读 API 的受信主机。",
 			inactive: "已停用",
 			scopeInactive: "范围已关闭",
 			unsaved: "未保存",
@@ -86,22 +111,22 @@ window.__ModuleLoader__.load({
 			route: "路由",
 			effort: "Effort",
 			globalOverrides: "全部预设已启用，包含工程模式。",
-			summary: '子代理模型分档、Codex/Claude CLI 后端、接入范围与运行中子代理退出守卫',
+			summary: '子代理路由、CLI 后端与退出守卫',
 			title: '子代理',
-			intro: '管理 CLI 后端、模型分档与子代理行为。',
+			intro: '保存后即时生效，无需重启。配置写入当前 profile 的行配置（cordis.patch.yml）。',
 			loading: '正在读取配置…',
 			waitingForm: '正在等待宿主提供这一行的配置快照…',
 			noFormHint: '长时间停在这里说明宿主没有为这一行提供可编辑配置：本部署没组合 dsh-settings/config-editor，或本行的 Config 未被识别。',
 			unavailable: '当前连接下该配置不可用：请通过 loopback 地址访问。本插件的 trustedHosts 只影响它自己的只读 API，不能让设置镜像在反代页面变为可写；设置可用性由宿主连接策略决定。',
 			readonly: '当前连接只读（设置镜像为进程内 memory），无法写入宿主配置。',
 			childExitGuardLabel: '运行中子代理退出守卫',
-			childExitGuardHint: '等待运行中的直接子代理完成；Esc 中断始终可用。',
+			childExitGuardHint: '回合结束时若仍有运行中的直接子代理，注入提醒强制继续处理；用户中断（Esc）始终放行。后台命令由其它开关负责。',
 			tiersTitle: '子代理模型分档',
-			tiersIntro: '为工程模式选择两档模型，候选来自子代理模型白名单。',
+			tiersIntro: '工程模式提示词按这里的路由告诉主代理两档各用哪个模型；候选来自「插件 → 子代理 → 模型选择」白名单。',
 			tierFast: '快速档',
 			tierQuality: '质量档',
-			tierFastHint: '探索、机械分析与批量排查',
-			tierQualityHint: '复杂实现、调试与审查',
+			tierFastHint: '快速档：探索、侦察、机械分析、批量排查。',
+			tierQualityHint: '质量档：复杂实现、调试、审查、设计。',
 			tierInherit: '沿用父会话路由',
 			tierEffortDefault: '模型默认',
 			tierRouteLabel: '{tier}路由',
@@ -169,22 +194,48 @@ window.__ModuleLoader__.load({
 			invalidNoModels: '{backend}已启用，但还没有配置任何模型。',
 			invalidDefaultModel: '{backend}已启用，请把默认模型设为模型列表里的一个。',
 			invalidDefaultEffort: '{backend}的默认模型需要 effort 列表，并指定一个属于它的默认 effort。',
+			readonlyShort: '只读',
 			readonlyNote: '只读：当前无法写入宿主配置。',
 			unavailableNote: '不可写：当前连接下该配置不可用。',
 		};
 
 		const en = {
+			advanced: "Advanced",
+			configureBackend: 'Configure {backend}',
+			modelsEmptyTitle: 'Set up your first model',
+			effortsFirst: 'Add efforts first',
+			trustedCount: '{count} hosts',
+			behaviorTitle: 'Behavior',
+			defaults: "Default",
+			customized: "{count} customized",
+			readonlyDiagnostics: "Diagnostics",
+			draftPreview: "Draft preview",
+			changeCount: "{count} changes",
+			resetConfirm: "Click again to discard",
+			backendOff: "Enable to configure its default model and permissions.",
+			routingPreview: "Routing",
+			backendsTitle: "Backends",
+			tierFastTask: "Explore · Batch checks",
+			tierQualityTask: "Implement · Debug · Review",
+			profileChoose: "Use Profile {profile}",
+			permissionReadOnly: "Inspect files without writing.",
+			permissionWrite: "Edit workspace files with restricted external access.",
+			permissionFull: "Edit files and access external resources without approval prompts.",
+			permissionPlan: "Plan first; execution requires separate approval.",
+			permissionManual: "Request approval for each sensitive operation.",
+			permissionDontAsk: "Reject operations that cannot be approved automatically.",
+			permissionAcceptEdits: "Allow file edits; other operations still require approval.",
+			permissionAuto: "Let Claude assess operation permissions.",
+			permissionBypass: "Skip all permission prompts.",
+			trustedDefault: "Loopback only",
+			modelCatalog: "Model catalog",
+			diagnosticsLink: "View connection diagnostics",
 			tabGeneral: "Overview",
 			tabCli: "CLI",
 			tabTiers: "Model tiers",
 			tabConnection: "Connection",
 			details: "Details",
 			configured: "Enabled",
-			modelsEmptyTitle: "Set up your first model",
-			effortsFirst: "Add efforts first",
-			configureBackend: "Configure {backend}",
-			behaviorTitle: "Run behavior",
-			connectionIntro: "Check your connection and manage trusted hosts for the read-only API.",
 			inactive: "Disabled",
 			scopeInactive: "Scope off",
 			unsaved: "Unsaved changes",
@@ -207,22 +258,22 @@ window.__ModuleLoader__.load({
 			route: "Route",
 			effort: "Effort",
 			globalOverrides: "All presets includes the eng preset.",
-			summary: 'Subagent model tiers, Codex/Claude CLI backends, scope, and the running-child exit guard',
+			summary: 'Subagent routes, CLI backends and the exit guard',
 			title: 'Subagents',
-			intro: 'Manage CLI backends, model tiers, and subagent behavior.',
+			intro: 'Saving applies immediately, no restart. Values persist in the active profile row config (cordis.patch.yml).',
 			loading: 'Loading configuration…',
 			waitingForm: 'Waiting for the host to provide this row’s configuration snapshot…',
 			noFormHint: 'Staying here means the host exposes no editable config for this row: dsh-settings/config-editor is not composed, or this row’s Config was not recognized.',
 			unavailable: 'This configuration is unavailable on the current connection: use a loopback address. This plugin’s trustedHosts only affects its own read-only API; it cannot make the settings mirror writable on a proxied page — settings availability is decided by the host connection policy.',
 			readonly: 'This connection is read-only (settings mirror is process-local memory); host configuration cannot be written.',
 			childExitGuardLabel: 'Child exit guard',
-			childExitGuardHint: 'Wait for running direct subagents before ending a turn. Esc can always interrupt.',
+			childExitGuardHint: 'Blocks turn end while direct subagents are still running; interrupt (Esc) always passes through. Background jobs are owned by other switches.',
 			tiersTitle: 'Subagent model tiers',
-			tiersIntro: 'Choose two model tiers for eng mode from the subagent model allowlist.',
+			tiersIntro: 'The eng mode prompt tells the main agent which route each tier uses; candidates come from the Plugins → Subagent → Model selection allowlist.',
 			tierFast: 'Fast tier',
 			tierQuality: 'Quality tier',
-			tierFastHint: 'Exploration, mechanical analysis, and batch checks',
-			tierQualityHint: 'Complex implementation, debugging, and review',
+			tierFastHint: 'Fast tier: exploration, reconnaissance, mechanical analysis, batch checks.',
+			tierQualityHint: 'Quality tier: complex implementation, debugging, review, design.',
 			tierInherit: 'Inherit parent route',
 			tierEffortDefault: 'Model default',
 			tierRouteLabel: '{tier} route',
@@ -290,6 +341,7 @@ window.__ModuleLoader__.load({
 			invalidNoModels: '{backend} is enabled but has no model configured.',
 			invalidDefaultModel: '{backend} is enabled: set the default model to one of its model ids.',
 			invalidDefaultEffort: '{backend}’s default model needs an effort list and a default effort from that list.',
+			readonlyShort: 'Read-only',
 			readonlyNote: 'Read-only: host configuration cannot be written.',
 			unavailableNote: 'Not writable: this configuration is unavailable on the current connection.',
 		};
@@ -319,24 +371,153 @@ window.__ModuleLoader__.load({
 		// ── 样式（组件树内的 <style>；复用 DSH 设计令牌，与官方设置页同观感）──────────
 
 		const STYLE_ID = '@menghuan1918/dsh-better-subagent/settings.css';
-		const CSS = [
-			".bs-root{--bs-accent:#3388BB;--bs-accent-ink:color-mix(in srgb,var(--bs-accent) 72%,var(--dsw-alias-label-primary));--bs-accent-fill:color-mix(in srgb,var(--bs-accent) 85%,black);--bs-accent-fg:#fff;--dsw-alias-button-primary-fill:var(--bs-accent-fill);--dsw-alias-button-primary-hover:color-mix(in srgb,var(--bs-accent) 75%,black);--dsw-alias-label-primary-foreground:var(--bs-accent-fg);--bs-muted:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;min-width:0}",
-			".bs-root *{box-sizing:border-box}.bs-root [hidden]{display:none!important}.bs-cfg{display:flex;flex-direction:column;gap:24px;max-width:960px;min-width:0;padding:8px 0}.bs-srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}",
-			".bs-header,.bs-sectionHead,.bs-cardHead,.bs-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px}.bs-header{align-items:flex-start}.bs-heading{display:flex;flex-direction:column;gap:4px}.bs-title{margin:0;font-size:14px;line-height:20px;font-weight:500}.bs-header .bs-title{font-size:20px;line-height:28px;font-weight:600;letter-spacing:-.01em}.bs-hint,.bs-status{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}.bs-description{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}",
-			".bs-note{margin:0;padding:8px 12px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-2);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}.bs-note[data-tone=error],.bs-hint[data-tone=error],.bs-status[data-tone=error]{color:var(--dsw-alias-state-error-primary)}.bs-note[data-tone=warn]{border-inline-start:2px solid var(--dsw-alias-state-warn-primary,var(--dsw-alias-label-secondary))}.bs-hint[data-tone=ok],.bs-status[data-tone=ok]{color:var(--dsw-alias-state-success-primary)}",
-			".bs-tabs{display:flex;gap:24px;padding:0;border-bottom:0.5px solid var(--dsw-alias-border-l2);overflow-x:auto;scrollbar-width:thin;max-width:100%}.bs-tab{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:0 0 9px;border:0;border-radius:0;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background-color 100ms ease,color 100ms ease}.bs-tab:hover{color:var(--dsw-alias-label-primary)}.bs-tab[aria-selected=true]{color:var(--bs-accent-ink)}.bs-tab[aria-selected=true]::after{content:\"\";position:absolute;inset-inline:0;bottom:0;height:2px;border-radius:2px;background:var(--bs-accent)}.bs-subtabs{align-self:flex-start;gap:2px;padding:2px;border:0;border-radius:10px;background:var(--dsw-alias-bg-layer-2)}.bs-subtabs .bs-tab{min-height:28px;padding:4px 12px;border-radius:8px;font-weight:400;color:var(--dsw-alias-label-secondary)}.bs-subtabs .bs-tab:hover{background:var(--bs-muted)}.bs-subtabs .bs-tab[aria-selected=true]{background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-weight:500;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}.bs-subtabs .bs-tab[aria-selected=true]::after{display:none}.bs-tabpanel{display:flex;flex-direction:column;gap:32px;min-width:0}",
-			".bs-section,.bs-card{display:flex;flex-direction:column;gap:16px;min-width:0}.bs-section{padding:16px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-layer-2)}.bs-section+.bs-section{border-top:1px solid var(--dsw-alias-border-l2)}.bs-sectionHead{min-height:24px}.bs-cardHead{padding-bottom:12px;border-bottom:0.5px solid var(--dsw-alias-border-l2)}.bs-cardTitle{margin:0;font-size:14px;line-height:20px;font-weight:500}.bs-cardHead .bs-switchRow{padding:0;gap:12px;min-height:32px}.bs-cardHead .bs-switchLabel{font-size:12px;color:var(--dsw-alias-label-secondary)}.bs-backendSettings{display:flex;flex-direction:column;gap:24px;padding:0}.bs-modelSection{display:flex;flex-direction:column;gap:16px;padding-top:24px;border-top:0.5px solid var(--dsw-alias-border-l2)}",
-			".bs-field{position:relative;display:grid;grid-template-columns:144px minmax(0,1fr);gap:12px 24px;align-items:start}.bs-fieldLabel{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding-top:7px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}.bs-fieldLabel>.bs-hint{font-weight:400}.bs-fieldBody{display:flex;flex-direction:column;gap:4px;min-width:0}.bs-fieldWide{grid-template-columns:minmax(0,1fr)}.bs-fieldWide>.bs-fieldLabel{padding:0}.bs-fieldBody>.bs-input,.bs-fieldBody>.bs-select{max-width:560px}",
-			".bs-input,.bs-select,.bs-textarea{width:100%;min-width:0;height:32px;padding:5px 10px;border:0.5px solid var(--dsw-alias-border-l3);border-radius:6px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;line-height:20px;transition:border-color 100ms ease,background-color 100ms ease}.bs-select{appearance:none;-webkit-appearance:none;padding-right:28px;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22 fill=%22none%22%3E%3Cpath d=%22m3 4.5 3 3 3-3%22 stroke=%22%23888b90%22 stroke-width=%221.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 10px center;background-size:10px}.bs-textarea{height:auto;min-height:96px;max-height:280px;resize:vertical}.bs-input:hover:not(:disabled),.bs-select:hover:not(:disabled),.bs-textarea:hover:not(:disabled){border-color:var(--dsw-alias-border-l4)}.bs-input::placeholder,.bs-textarea::placeholder{color:var(--dsw-alias-label-dimmed)}.bs-input[aria-invalid=true],.bs-select[aria-invalid=true],.bs-textarea[aria-invalid=true]{border-color:var(--dsw-alias-state-error-primary)}",
-			".bs-root :is(input,select,textarea,button,summary,a,[tabindex]):focus{outline:none}.bs-root :is(input,select,textarea,button,summary,a,[tabindex]):focus-visible{outline:2px solid var(--bs-accent);outline-offset:3px}.bs-root :is(input,select,textarea,button):disabled{opacity:.4;cursor:not-allowed}.bs-mono,.bs-model .bs-input,.bs-textarea{font-family:var(--dsw-font-family-mono,ui-monospace,SFMono-Regular,Consolas,monospace);font-variant-numeric:tabular-nums}.bs-mono{overflow-wrap:anywhere}",
-			".bs-switchRow{position:relative;display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:40px;padding:4px 0}.bs-switchMain{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.bs-switchLabel{font-weight:500;cursor:pointer}.bs-switch{display:flex;align-items:center;justify-content:center;flex:none;width:36px;height:32px;padding:0;border:0;border-radius:6px;background:transparent;cursor:pointer}.bs-switchTrack{display:block;width:36px;height:20px;padding:2px;border:1px solid var(--dsw-alias-border-l3);border-radius:12px;background:var(--dsw-alias-bg-layer-3);transition:background-color 150ms ease}.bs-switch:hover:not(:disabled){background:var(--bs-muted)}.bs-switch:hover:not(:disabled) .bs-switchTrack{border-color:var(--dsw-alias-border-l4)}.bs-switch:active:not(:disabled){background:var(--bs-muted)}.bs-switch[aria-checked=true] .bs-switchTrack{background:var(--bs-accent);border-color:var(--bs-accent)}.bs-switchThumb{display:block;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-label-secondary);transition:transform 150ms ease}.bs-switch[aria-checked=true] .bs-switchThumb{transform:translateX(16px);background:var(--bs-accent-fg)}",
-			".bs-actions{display:flex;flex-wrap:wrap;gap:8px}.bs-button,.bs-iconButton{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-height:32px;padding:5px 12px;border:0.5px solid transparent;border-radius:6px;font:inherit;font-size:13px;line-height:20px;font-weight:400;color:var(--dsw-alias-label-primary);background:transparent;cursor:pointer;transition:background-color 100ms ease}.bs-button[data-variant=outline]{border-color:var(--dsw-alias-border-l3)}.bs-button:hover:not(:disabled),.bs-iconButton:hover:not(:disabled){background:var(--bs-muted)}.bs-button:active:not(:disabled),.bs-iconButton:active:not(:disabled){background:var(--dsw-alias-interactive-bg-active,var(--bs-muted))}.bs-button[data-variant=primary]{background:var(--bs-accent-fill);color:var(--bs-accent-fg)}.bs-button[data-variant=primary]:hover:not(:disabled){background:color-mix(in srgb,var(--bs-accent) 75%,black)}.bs-button[data-variant=primary]:active:not(:disabled){background:color-mix(in srgb,var(--bs-accent) 65%,black)}.bs-iconButton{width:32px;flex:none;padding:6px;color:var(--dsw-alias-label-secondary)}.bs-iconButton[data-danger]:hover:not(:disabled){color:var(--dsw-alias-state-error-primary)}",
-			".bs-models{display:flex;flex-direction:column;gap:0}.bs-model,.bs-modelHead{display:grid;grid-template-columns:minmax(112px,1.3fr) minmax(112px,1fr) minmax(104px,.8fr) 32px;gap:12px;align-items:start}.bs-model{padding:12px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}.bs-modelHead{padding-bottom:8px;font-size:12px;color:var(--dsw-alias-label-tertiary)}.bs-modelCell{display:flex;flex-direction:column;gap:4px;min-width:0}.bs-cellLabel{display:none;font-size:12px;color:var(--dsw-alias-label-secondary)}.bs-empty{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:16px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}.bs-empty svg{color:var(--dsw-alias-label-tertiary)}.bs-emptyTitle{margin:0;font-size:14px;line-height:20px;font-weight:500}.bs-tierRow{display:grid;grid-template-columns:160px minmax(0,1fr);gap:24px;padding:16px 0}.bs-tierRow+.bs-tierRow{border-top:0.5px solid var(--dsw-alias-border-l2)}.bs-tierIntro{display:flex;flex-direction:column;gap:4px}.bs-tier{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px}.bs-tierCell{display:flex;flex-direction:column;gap:4px;min-width:0}.bs-controlLabel{font-size:12px;color:var(--dsw-alias-label-secondary)}",
-			".bs-badge{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:4px;font-size:12px;line-height:18px;font-weight:400;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);white-space:nowrap}.bs-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--dsw-alias-label-dimmed)}.bs-dot[data-active=true]{background:var(--bs-accent)}.bs-overview{display:flex;flex-direction:column}.bs-overviewGlyph{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary)}.bs-overviewMeta{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}.bs-overviewRow{display:flex;align-items:center;gap:16px;width:100%;padding:12px 8px;border:0;border-bottom:0.5px solid var(--dsw-alias-border-l2);border-radius:0;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:left;transition:background-color 100ms ease}.bs-overviewRow:first-child{border-top:0.5px solid var(--dsw-alias-border-l2)}.bs-overviewRow:hover{background:var(--bs-muted)}.bs-overviewRow:active{background:var(--bs-muted)}.bs-overviewName{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}.bs-overviewName>span:first-child{font-weight:500}.bs-overviewRow>svg{color:var(--dsw-alias-label-tertiary);flex:none}.bs-connectionRow{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:16px 0;border-bottom:0.5px solid var(--dsw-alias-border-l2)}.bs-connectionStatus{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--dsw-alias-label-secondary)}",
-			".bs-footer{position:sticky;bottom:0;z-index:1;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:16px 0;border-top:0.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}.bs-status{flex:1;min-width:144px}.bs-footer>.bs-status{margin-right:auto}.bs-errorLink{padding:0;min-height:24px;color:var(--dsw-alias-state-error-primary);text-align:left;white-space:normal;justify-content:flex-start;font-size:12px;font-weight:400}.bs-pulse{animation:bs-pulse 2s ease infinite}@keyframes bs-pulse{50%{opacity:.55}}",
-			"@media(max-width:640px){.bs-header{gap:12px}.bs-tabs{gap:20px}.bs-subtabs{gap:2px}.bs-field,.bs-tierRow{grid-template-columns:minmax(0,1fr);gap:8px}.bs-fieldLabel{padding:0}.bs-sectionHead,.bs-toolbar{flex-wrap:wrap;gap:12px}.bs-modelHead{display:none}.bs-model{grid-template-columns:minmax(0,1fr) 32px;gap:12px;padding:16px 0}.bs-modelCell{grid-column:1}.bs-cellLabel{display:block}.bs-model .bs-iconButton{grid-column:2;grid-row:1}.bs-footer>.bs-status{flex-basis:100%}.bs-connectionRow{gap:12px;flex-wrap:wrap}.bs-tier{grid-template-columns:minmax(0,1fr);gap:12px}.bs-overviewRow{gap:12px;flex-wrap:wrap}.bs-cardHead{gap:12px}.bs-modelSection .bs-actions{width:100%}.bs-modelSection .bs-actions>.bs-button{flex:1}.bs-tabpanel{gap:24px}}",
-			"@media(prefers-reduced-motion:reduce){.bs-root *{animation:none!important;transition:none!important}}",
-		].join('\n');
+		const CSS = `.bs-root{--cfg-accent:#3388BB;--cfg-accent-solid:#20709e;--cfg-accent-fg:#fff;--cfg-accent-text:#14587f;--cfg-accent-hover:#1b628c;--cfg-accent-soft:color-mix(in srgb,var(--cfg-accent) 10%,transparent);--cfg-bg:var(--dsw-alias-bg-layer-1);--cfg-raised:var(--dsw-alias-bg-layer-2);--cfg-overlay:var(--dsw-alias-bg-layer-3);--cfg-sunken:color-mix(in srgb,var(--dsw-alias-label-primary) 4%,var(--dsw-alias-bg-layer-1));--cfg-ink:var(--dsw-alias-label-primary);--cfg-muted:var(--dsw-alias-label-secondary);--cfg-dim:color-mix(in srgb,var(--dsw-alias-label-tertiary) 80%,var(--dsw-alias-label-primary));--cfg-line:var(--dsw-alias-border-l2);--cfg-line-strong:var(--dsw-alias-border-l3);--cfg-hover:var(--dsw-alias-interactive-bg-hover);--cfg-danger:var(--dsw-alias-state-error-primary);--cfg-warn:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 60%,var(--dsw-alias-label-primary));--cfg-success:color-mix(in srgb,var(--dsw-alias-state-success-primary) 60%,var(--dsw-alias-label-primary));--cfg-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--cfg-ink);font:inherit;font-size:13px;line-height:20px;min-width:0;font-variant-numeric:tabular-nums;display:flex;flex-direction:column;flex:1;min-height:0}
+[data-ds-dark-theme] .bs-root{--cfg-accent:#4eb0e8;--cfg-accent-solid:#4eb0e8;--cfg-accent-fg:#0e1014;--cfg-accent-text:#6fc0ee;--cfg-accent-hover:#6fc0ee;--cfg-accent-soft:color-mix(in srgb,var(--cfg-accent) 14%,transparent)}
+.bs-root,.bs-root *{box-sizing:border-box}
+.bs-root [hidden]{display:none!important}
+.bs-cfg{display:flex;flex-direction:column;gap:24px;max-width:920px;min-width:0;flex:1;min-height:0}
+.bs-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px}
+.bs-title{margin:0;font-size:13px;line-height:20px;font-weight:500;color:var(--cfg-ink)}
+.bs-header .bs-title{font-size:20px;line-height:28px;letter-spacing:-.01em}
+.bs-sectionTitle{font-size:12px;line-height:18px;font-weight:500;color:var(--cfg-muted)}
+.bs-cardTitle{margin:0;font-size:14px;line-height:20px;font-weight:500;color:var(--cfg-ink)}
+.bs-hint,.bs-status{margin:0;color:var(--cfg-muted);font-size:12px;line-height:18px}
+.bs-hintWarn{color:color-mix(in srgb,var(--cfg-warn) 55%,var(--cfg-ink))}
+.bs-note{margin:8px 0 0;padding:8px 10px;border:1px solid var(--cfg-line);border-radius:8px;background:var(--cfg-sunken);color:var(--cfg-muted);font-size:12px;line-height:18px}
+.bs-note[data-tone=warn]{border-color:color-mix(in srgb,var(--cfg-warn) 34%,var(--cfg-line));color:var(--cfg-ink)}
+.bs-note[data-tone=error],.bs-hint[data-tone=error],.bs-status[data-tone=error]{color:var(--cfg-danger)}
+.bs-hint[data-tone=ok],.bs-status[data-tone=ok]{color:color-mix(in srgb,var(--cfg-success) 55%,var(--cfg-ink))}
+.bs-tabs{display:inline-flex;align-self:flex-start;gap:2px;height:32px;max-width:100%;padding:2px;border:1px solid var(--cfg-line);border-radius:8px;background:var(--cfg-sunken);overflow-x:auto;scrollbar-width:none}
+.bs-tabs::-webkit-scrollbar{display:none}
+.bs-tab{appearance:none;position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;height:28px;padding:0 12px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--cfg-muted);font:inherit;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer}
+.bs-tab:hover{background:var(--cfg-hover);color:var(--cfg-ink)}
+.bs-tab[aria-selected=true]{background:var(--cfg-overlay);border-color:var(--cfg-line);color:var(--cfg-accent-text)}
+.bs-tab:focus-visible{outline:2px solid var(--cfg-accent);outline-offset:-2px}
+.bs-subtabs{height:30px}
+.bs-subtabs .bs-tab{height:26px;padding:0 10px;font-size:12px}
+.bs-tabpanel{display:flex;flex-direction:column;gap:0;min-width:0}
+.bs-section,.bs-card{display:flex;flex-direction:column;min-width:0;border-top:1px solid var(--cfg-line);padding:12px 0 4px}
+.bs-section:first-child,.bs-card:first-child{border-top:0;padding-top:0}
+.bs-sectionHead,.bs-cardHead,.bs-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.bs-sectionHead{min-height:28px;padding-bottom:4px;border-bottom:1px solid var(--cfg-line)}
+.bs-cardHead{min-height:32px;padding-bottom:4px;border-bottom:1px solid var(--cfg-line)}
+.bs-toolbar{justify-content:flex-start;gap:8px}
+.bs-field{display:grid;grid-template-columns:180px minmax(0,1fr);gap:8px 20px;align-items:start;padding:10px 0;border-bottom:1px solid var(--cfg-line);min-width:0}
+.bs-field:last-child{border-bottom:0}
+.bs-fieldLabel{display:flex;align-items:center;gap:6px;min-width:0;padding-top:6px;font-size:13px;font-weight:500;color:var(--cfg-ink)}
+.bs-fieldBody{display:flex;flex-direction:column;gap:6px;min-width:0}
+.bs-fieldWide{grid-template-columns:minmax(0,1fr)}
+.bs-fieldWide>.bs-fieldLabel{padding:0}
+.bs-fieldGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:10px 0;border-bottom:1px solid var(--cfg-line);min-width:0}
+.bs-fieldGrid .bs-field{display:flex;flex-direction:column;gap:6px;padding:0;border:0}
+.bs-fieldGrid .bs-fieldLabel{padding:0;font-size:12px;font-weight:500;color:var(--cfg-muted)}
+.bs-tierGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;min-width:0;padding:10px 0;border-bottom:1px solid var(--cfg-line)}
+.bs-tierGrid .bs-field{display:flex;flex-direction:column;gap:6px;padding:0;border:0}
+.bs-tierGrid .bs-fieldLabel{padding:0}
+.bs-input,.bs-select,.bs-textarea{appearance:none;width:100%;min-width:0;height:32px;padding:0 10px;border:1px solid var(--cfg-line-strong);border-radius:8px;background:var(--cfg-raised);color:var(--cfg-ink);font:inherit;font-size:13px;line-height:20px;transition:border-color 140ms ease,box-shadow 140ms ease,background-color 140ms ease}
+.bs-textarea{height:auto;min-height:88px;max-height:220px;padding:8px 10px;resize:vertical}
+.bs-input:hover:not(:disabled),.bs-select:hover:not(:disabled),.bs-textarea:hover:not(:disabled){border-color:var(--cfg-muted)}
+.bs-input:focus-visible,.bs-select:focus-visible,.bs-textarea:focus-visible{outline:none;border-color:var(--cfg-accent);box-shadow:0 0 0 2px var(--cfg-accent-soft)}
+.bs-root [aria-invalid=true]{border-color:var(--cfg-danger)}
+.bs-input::placeholder,.bs-textarea::placeholder{color:var(--cfg-dim)}
+.bs-input:disabled,.bs-select:disabled,.bs-textarea:disabled{opacity:.4;cursor:not-allowed}
+.bs-mono,.bs-model .bs-input,.bs-select,.bs-textarea{font-family:var(--cfg-mono);font-variant-numeric:tabular-nums}
+.bs-mono{overflow-wrap:anywhere}
+.bs-selectWrap{position:relative;min-width:0}
+.bs-select{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer}
+.bs-selectValue{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-select svg{flex:none;color:var(--cfg-dim)}
+.bs-selectMenu{position:absolute;inset-inline:0;top:calc(100% + 4px);z-index:30;min-width:0;max-height:240px;overflow:auto;overscroll-behavior:contain;padding:4px;border:1px solid var(--cfg-line-strong);border-radius:10px;background:var(--cfg-overlay);box-shadow:0 12px 32px -12px rgb(0 0 0 / .35)}
+.bs-selectMenu[data-side=top]{top:auto;bottom:calc(100% + 4px)}
+.bs-option{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;border-radius:6px;color:var(--cfg-ink);cursor:pointer;overflow-wrap:anywhere}
+.bs-option[data-active=true]{background:var(--cfg-hover)}
+.bs-option[aria-selected=true]{background:var(--cfg-accent-soft);color:var(--cfg-accent-text)}
+.bs-optionCheck{width:12px;flex:none;color:var(--cfg-accent-text)}
+.bs-optionLabel{min-width:0}
+.bs-switchRow{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;padding:10px 0;border-bottom:1px solid var(--cfg-line);min-width:0}
+.bs-switchRow:last-child{border-bottom:0}
+.bs-switchMain{flex:1;min-width:0}
+.bs-switchLabel{font-size:13px;font-weight:500;color:var(--cfg-ink)}
+.bs-cardHead .bs-switchRow{min-height:0;padding:0;border:0;gap:10px}
+.bs-cardHead .bs-switchLabel{font-size:12px;font-weight:400;color:var(--cfg-muted)}
+.bs-switch{appearance:none;position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:34px;height:20px;padding:0;border:0;border-radius:999px;background:transparent;cursor:pointer}
+.bs-switchTrack{display:block;width:34px;height:20px;padding:2px;border:1px solid var(--cfg-line-strong);border-radius:999px;background:var(--cfg-sunken);transition:background-color 140ms ease,border-color 140ms ease}
+.bs-switch:hover:not(:disabled) .bs-switchTrack{border-color:var(--cfg-muted)}
+.bs-switch[aria-checked=true] .bs-switchTrack{background:var(--cfg-accent-solid);border-color:var(--cfg-accent-solid)}
+.bs-switchThumb{display:block;width:14px;height:14px;border-radius:50%;background:var(--cfg-muted);transition:transform 140ms ease,background-color 140ms ease}
+.bs-switch[aria-checked=true] .bs-switchThumb{transform:translateX(14px);background:var(--cfg-accent-fg)}
+.bs-switch:focus-visible{outline:2px solid var(--cfg-accent);outline-offset:2px}
+.bs-switch:disabled{opacity:.4;cursor:not-allowed}
+.bs-button,.bs-iconButton{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid transparent;border-radius:8px;font:inherit;font-size:13px;line-height:20px;font-weight:500;color:var(--cfg-ink);background:transparent;cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease}
+.bs-button[data-variant=outline]{border-color:var(--cfg-line-strong);background:var(--cfg-raised)}
+.bs-button:hover:not(:disabled),.bs-iconButton:hover:not(:disabled){background:var(--cfg-hover)}
+.bs-button[data-variant=primary]{background:var(--cfg-accent-solid);color:var(--cfg-accent-fg)}
+.bs-button[data-variant=primary]:hover:not(:disabled){background:var(--cfg-accent-hover)}
+.bs-iconButton{width:28px;height:28px;padding:0;border:0;border-radius:6px;color:var(--cfg-muted)}
+.bs-iconButton[data-danger]:hover:not(:disabled){color:var(--cfg-danger)}
+.bs-button:disabled,.bs-iconButton:disabled,.bs-root :disabled{opacity:.4;cursor:not-allowed}
+.bs-button:focus-visible,.bs-iconButton:focus-visible,.bs-root summary:focus-visible{outline:2px solid var(--cfg-accent);outline-offset:2px}
+.bs-models{display:flex;flex-direction:column;min-width:0}
+.bs-model,.bs-modelHead{display:grid;grid-template-columns:minmax(110px,1.2fr) minmax(140px,1.4fr) minmax(110px,1fr) 28px;gap:8px;align-items:start}
+.bs-modelHead{padding:8px 0;border-bottom:1px solid var(--cfg-line);color:var(--cfg-muted);font-size:12px}
+.bs-model{padding:8px 0;border-top:1px solid var(--cfg-line)}
+.bs-modelHead+.bs-model{border-top:0}
+.bs-modelCell,.bs-tierCell{display:flex;flex-direction:column;gap:4px;min-width:0}
+.bs-cellLabel{display:none;font-size:11px;line-height:16px;color:var(--cfg-muted)}
+.bs-tier{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px 12px;align-items:start}
+.bs-tierInherit{grid-template-columns:minmax(0,1fr)}
+.bs-tierPurpose{grid-column:1/-1;color:var(--cfg-muted);font-size:12px;line-height:18px}
+.bs-controlLabel{font-size:12px;line-height:18px;color:var(--cfg-muted)}
+.bs-badge{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 8px;border:1px solid var(--cfg-line);border-radius:999px;background:var(--cfg-raised);color:var(--cfg-muted);font-size:11px;line-height:18px;font-weight:400;white-space:nowrap}
+.bs-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--cfg-dim)}
+.bs-dot[data-active=true]{background:var(--cfg-accent)}
+.bs-overview{display:flex;flex-direction:column;min-width:0}
+.bs-overviewRow{appearance:none;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:8px 0;border:0;border-bottom:1px solid var(--cfg-line);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.bs-overviewRow:last-child{border-bottom:0}
+.bs-overviewRow:hover{background:var(--cfg-hover)}
+.bs-overviewRow:focus-visible{outline:2px solid var(--cfg-accent);outline-offset:2px}
+.bs-overviewGlyph{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex:none;border:1px solid var(--cfg-line);border-radius:6px;background:var(--cfg-sunken);color:var(--cfg-muted)}
+.bs-overviewName{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.bs-overviewName>span:first-child{font-weight:500}
+.bs-overviewMeta{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--cfg-muted);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.bs-overviewRow>svg{color:var(--cfg-dim);flex:none}
+.bs-routing{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.2fr);gap:12px;align-items:center;min-height:44px;padding:10px 0;border-bottom:1px solid var(--cfg-line);min-width:0}
+.bs-routing:last-child{border-bottom:0}
+.bs-routingLabel{font-size:13px;line-height:20px;color:var(--cfg-ink);min-width:0}
+.bs-routingArrow{color:var(--cfg-dim);font-size:12px}
+.bs-routingTarget{appearance:none;display:inline-flex;align-items:center;min-height:28px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--cfg-accent-text);font:inherit;font-size:13px;font-weight:500;text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.bs-routingTarget:hover{background:var(--cfg-hover)}
+.bs-routingTarget:focus-visible{outline:2px solid var(--cfg-accent);outline-offset:2px}
+.bs-empty{display:flex;flex-direction:column;gap:4px;margin:8px 0;padding:10px 12px;border:1px solid var(--cfg-line);border-radius:8px;background:var(--cfg-sunken)}
+.bs-empty .bs-title{font-size:13px;font-weight:500}
+.bs-actions{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0}
+.bs-advanced{margin-top:8px;border-top:1px solid var(--cfg-line)}
+.bs-advanced>summary{display:flex;align-items:center;gap:8px;min-height:32px;padding:8px 0;list-style:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--cfg-ink)}
+.bs-advanced>summary::-webkit-details-marker{display:none}
+.bs-advanced>summary:before{content:"";width:6px;height:6px;flex:none;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);transition:transform 140ms ease}
+.bs-advanced[open]>summary:before{transform:rotate(45deg)}
+.bs-advancedSummary{margin-left:auto;color:var(--cfg-muted);font-size:12px;font-weight:400}
+.bs-profileChoices{display:flex;flex-wrap:wrap;gap:6px}
+.bs-profileChoices .bs-button{height:28px;padding:0 9px;border-radius:6px;font-size:12px}
+.bs-diagGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:10px 0;border-bottom:1px solid var(--cfg-line);min-width:0}
+.bs-metric{display:flex;flex-direction:column;gap:4px;min-width:0}
+.bs-metricLabel{font-size:12px;line-height:18px;color:var(--cfg-muted)}
+.bs-metricValue{display:-webkit-box;overflow:hidden;color:var(--cfg-ink);font-size:12px;line-height:18px;overflow-wrap:anywhere;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.bs-connectionRow{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:36px;border-bottom:1px solid var(--cfg-line);color:var(--cfg-muted);font-size:12px}
+.bs-connectionRow:last-child{border-bottom:0}
+.bs-footer{position:sticky;bottom:0;z-index:10;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 0;border-top:1px solid var(--cfg-line);background:var(--cfg-bg);margin-top:auto}
+.bs-status{flex:1;min-width:140px}
+.bs-feedback{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 0 0;border-top:1px solid var(--cfg-line);font-size:12px}
+.bs-errorLink{height:auto;min-height:28px;padding:0;border:0;color:var(--cfg-danger);font-size:12px;font-weight:400;text-align:left;white-space:normal}
+.bs-errorLink:hover:not(:disabled){background:transparent;color:var(--cfg-danger)}
+.bs-srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.bs-spinner{width:12px;height:12px;flex:none;border:1px solid currentColor;border-right-color:transparent;border-radius:50%;animation:bs-spin .7s linear infinite}
+@keyframes bs-spin{to{transform:rotate(360deg)}}
+.bs-pulse{animation:bs-pulse 2s ease infinite}
+@keyframes bs-pulse{50%{opacity:.55}}
+@media(max-width:640px){.bs-header .bs-title{font-size:18px}.bs-cfg{gap:20px}.bs-header,.bs-sectionHead,.bs-cardHead{flex-wrap:wrap}.bs-tabs{display:flex;width:100%;overflow-x:auto}.bs-tab{padding:0 8px;font-size:12px}.bs-subtabs .bs-tab{padding:0 8px;font-size:11px}.bs-field{grid-template-columns:minmax(0,1fr);gap:4px}.bs-fieldLabel{padding:0}.bs-fieldGrid,.bs-tierGrid{grid-template-columns:minmax(0,1fr);gap:12px}.bs-routing{grid-template-columns:minmax(0,1fr);gap:4px}.bs-routingArrow{display:none}.bs-diagGrid{grid-template-columns:minmax(0,1fr)}.bs-modelHead{display:none}.bs-model{grid-template-columns:minmax(0,1fr) 28px;gap:8px}.bs-modelCell{grid-column:1}.bs-model .bs-iconButton{grid-column:2;grid-row:1}.bs-cellLabel{display:block}.bs-footer .bs-status{flex-basis:100%}.bs-cardHead .bs-switchRow{width:auto}}
+@media(pointer:coarse){.bs-button,.bs-input,.bs-select,.bs-textarea{min-height:44px}.bs-switch{width:44px;height:32px}.bs-switchTrack{width:34px;height:20px;margin:0 auto}.bs-iconButton{width:44px;height:44px}.bs-overviewRow{min-height:48px}}
+@media(prefers-reduced-motion:reduce){.bs-root *{animation:none!important;transition:none!important}}`;
 
 
 		// ── 取值/形状（与 src/config.js 的默认形状一致；浏览器半边不能 import 宿主模块）──
@@ -483,10 +664,10 @@ window.__ModuleLoader__.load({
 				const backend = current.subagents[spec.cli];
 				const titleKey = spec.cli === 'codex' ? 'codexTitle' : 'claudeTitle';
 				const fail = (key) => ({ key, titleKey });
+				if (!backend.enabled) continue;
 				const ids = backend.models.map((model) => model.id.trim());
 				if (ids.indexOf('') >= 0) return fail('invalidEmptyId');
 				if (new Set(ids).size !== ids.length) return fail('invalidDuplicateId');
-				if (!backend.enabled) continue;
 				if (backend.models.length === 0) return fail('invalidNoModels');
 				const selected = backend.models.find((model) => model.id.trim() === backend.defaultModel.trim());
 				if (selected === undefined) return fail('invalidDefaultModel');
@@ -582,11 +763,98 @@ window.__ModuleLoader__.load({
 
 		// ── 基础控件 ───────────────────────────────────────────────────────────
 
+
 		function Chevron() {
 			return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': true }, h('path', { d: 'm9 5 7 7-7 7' }));
 		}
 
-		/** Native controls stay mounted across tabs to preserve in-progress text. */
+		function Advanced({ summary, children, detailsRef, label }) {
+			return h('details', { className: 'bs-advanced', ref: detailsRef, onKeyDown: (event) => {
+				if (event.key !== 'Escape' || event.defaultPrevented || !event.currentTarget.open) return;
+				event.preventDefault(); event.stopPropagation();
+				event.currentTarget.open = false;
+				event.currentTarget.querySelector('summary')?.focus();
+			} },
+				h('summary', null, label ?? t('advanced'), h('span', { className: 'bs-advancedSummary' }, summary)), children);
+		}
+
+		/** Focus stays on the trigger; the active option is announced by the combobox. */
+		function Select({ children: options, value, onChange, disabled, id, className, ...props }) {
+			const uid = useId();
+			const listId = 'bs-options-' + uid.replace(/[^a-zA-Z0-9_-]/g, '');
+			const root = useRef(null);
+			const trigger = useRef(null);
+			const items = useRef([]);
+			const search = useRef({ text: '', at: 0 });
+			const [open, setOpen] = useState(false);
+			const [active, setActive] = useState(0);
+			const [side, setSide] = useState('bottom');
+			const selected = Math.max(0, options.findIndex((option) => option.value === value));
+			useEffect(() => {
+				if (!open) return;
+				const owner = root.current?.ownerDocument;
+				const outside = (event) => { if (!root.current?.contains(event.target)) setOpen(false); };
+				owner?.addEventListener('pointerdown', outside);
+				return () => owner?.removeEventListener('pointerdown', outside);
+			}, [open]);
+			useEffect(() => { if (open) items.current[active]?.scrollIntoView?.({ block: 'nearest' }); }, [open, active]);
+			const show = (index) => {
+				if (disabled || options.length === 0) return;
+				const rect = trigger.current?.getBoundingClientRect();
+				const height = root.current?.ownerDocument?.defaultView?.innerHeight;
+				setSide(rect && height - rect.bottom < Math.min(240, options.length * 28 + 10) && rect.top > height - rect.bottom ? 'top' : 'bottom');
+				setActive(index);
+				setOpen(true);
+			};
+			const choose = (index) => {
+				if (disabled || !options[index]) return;
+				onChange({ target: { value: options[index].value } });
+				setOpen(false);
+			};
+			return h('div', { className: 'bs-selectWrap', ref: root },
+				h('button', { ...props, id, type: 'button', className, value, disabled, ref: trigger, role: 'combobox',
+					'aria-haspopup': 'listbox', 'aria-expanded': open, 'aria-controls': listId,
+					'aria-activedescendant': open ? listId + '-' + active : undefined,
+					onClick: () => open ? setOpen(false) : show(selected),
+					onBlur: () => setOpen(false),
+					onKeyDown: (event) => {
+						if (disabled || event.defaultPrevented) return;
+						if (event.key === 'Escape' && open) {
+							event.preventDefault(); event.stopPropagation(); setOpen(false); return;
+						}
+						if (event.key === 'Tab') { setOpen(false); return; }
+						if (event.key === 'Enter' || event.key === ' ') {
+							event.preventDefault(); open ? choose(active) : show(selected); return;
+						}
+						let next;
+						if (event.key === 'ArrowDown') next = open ? Math.min(active + 1, options.length - 1) : selected;
+						else if (event.key === 'ArrowUp') next = open ? Math.max(active - 1, 0) : selected;
+						else if (event.key === 'Home') next = 0;
+						else if (event.key === 'End') next = options.length - 1;
+						else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+							const now = Date.now();
+							const text = (now - search.current.at < 700 ? search.current.text : '') + event.key.toLowerCase();
+							search.current = { text, at: now };
+							const start = open ? active : selected;
+							for (let step = 1; step <= options.length; step++) {
+								const index = (start + step) % options.length;
+								if (String(options[index].label).toLowerCase().startsWith(text)) { next = index; break; }
+							}
+						} else return;
+						if (next === undefined) return;
+						event.preventDefault(); open ? setActive(next) : show(next);
+					},
+				}, h('span', { className: 'bs-selectValue' }, options[selected]?.label ?? value),
+					h('svg', { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'aria-hidden': true }, h('path', { d: 'm4 6 4 4 4-4' }))),
+				h('div', { id: listId, className: 'bs-selectMenu', role: 'listbox', hidden: !open, 'data-side': side, 'aria-label': props['aria-label'], 'aria-labelledby': id },
+					options.map((option, index) => h('div', { key: option.value, id: listId + '-' + index, role: 'option', className: 'bs-option',
+						'data-value': option.value, 'aria-selected': option.value === value, 'data-active': index === active,
+						ref: (node) => { items.current[index] = node; },
+						onPointerDown: (event) => event.preventDefault(), onPointerMove: () => setActive(index), onClick: () => choose(index),
+					}, h('span', { className: 'bs-optionCheck', 'aria-hidden': true }, option.value === value ? '✓' : ''), h('span', { className: 'bs-optionLabel' }, option.label)))));
+		}
+
+		/** Controls stay mounted across tabs to preserve in-progress text. */
 		function Tabs({ id, label, items, value, onChange, compact, tabRefs }) {
 			const refs = useRef({});
 			return h('div', { className: compact ? 'bs-tabs bs-subtabs' : 'bs-tabs', role: 'tablist', 'aria-label': label },
@@ -615,7 +883,7 @@ window.__ModuleLoader__.load({
 			const control = hint === undefined || children === null || typeof children !== 'object'
 				? children
 				: Array.isArray(children)
-					? children.map((child, at) => (at === 0 ? cloneElement(child, { key: child.key ?? 'control', 'aria-describedby': hintId }) : child))
+					? children.map((child, at) => (at === 0 && isValidElement(child) ? cloneElement(child, { key: child.key ?? 'control', 'aria-describedby': hintId }) : child))
 					: cloneElement(children, { 'aria-describedby': hintId });
 			return h('div', { className: wide ? 'bs-field bs-fieldWide' : 'bs-field' },
 				h('div', { className: 'bs-fieldLabel' },
@@ -660,15 +928,15 @@ window.__ModuleLoader__.load({
 		/** 下拉选项：保留当前值（外部写入的值不在候选里时也不能被静默改掉）。 */
 		function optionNodes(values, current, noneLabel) {
 			const nodes = [];
-			if (noneLabel !== undefined) nodes.push(h('option', { key: '__none', value: '' }, noneLabel));
+			if (noneLabel !== undefined) nodes.push({ value: '', label: noneLabel });
 			const seen = new Set();
 			for (const value of values) {
 				if (typeof value !== 'string' || value === '' || seen.has(value)) continue;
 				seen.add(value);
-				nodes.push(h('option', { key: value, value }, value));
+				nodes.push({ value, label: value });
 			}
 			if (typeof current === 'string' && current !== '' && !seen.has(current)) {
-				nodes.push(h('option', { key: current, value: current }, current));
+				nodes.push({ value: current, label: current });
 			}
 			return nodes;
 		}
@@ -709,7 +977,7 @@ window.__ModuleLoader__.load({
 					})),
 				h('label', { className: 'bs-modelCell' },
 					h('span', { className: 'bs-cellLabel' }, translate('modelDefaultEffort')),
-					h('select', {
+					h(Select, {
 						className: 'bs-select', value: model.defaultEffort,
 						disabled: disabled || model.efforts.length === 0,
 						'aria-label': translate('modelDefaultEffort') + ' ' + String(index + 1),
@@ -736,18 +1004,17 @@ window.__ModuleLoader__.load({
 			const routes = allowed === null ? [] : allowed.routes;
 			const current = routeKey(value);
 			const selected = findRoute(routes, value);
-			const routeOptions = [h('option', { key: '__inherit', value: '' }, translate('tierInherit'))];
+			const routeOptions = [{ value: '', label: translate('tierInherit') }];
 			for (const route of routes) {
-				routeOptions.push(h('option', { key: routeKey(route), value: routeKey(route) }, route.provider + ' / ' + route.model));
+				routeOptions.push({ value: routeKey(route), label: route.provider + ' / ' + route.model });
 			}
 			if (current !== '' && selected === undefined) {
 				const label = value.provider + ' / ' + value.model;
-				routeOptions.push(h('option', { key: current, value: current },
-					allowed === null ? label : translate('tierOffList', { route: label })));
+				routeOptions.push({ value: current, label: allowed === null ? label : translate('tierOffList', { route: label }) });
 			}
 			const effortLabel = translate('tierEffortLabel', { tier: title });
 			const effort = selected !== undefined && selected.efforts.length > 0
-				? h('select', {
+				? h(Select, {
 					className: 'bs-select',
 					id: 'bs-tier-' + tier + '-effort',
 					'aria-label': effortLabel,
@@ -768,13 +1035,12 @@ window.__ModuleLoader__.load({
 					disabled: disabled || current === '',
 					onChange: (event) => onPatch({ reasoningEffort: event.target.value.trim() }),
 				});
-			return h('div', { className: 'bs-tierRow' },
-				h('div', { className: 'bs-tierIntro' }, h('label', { className: 'bs-title', htmlFor: 'bs-tier-' + tier + '-route' }, title),
-					h('p', { className: 'bs-srOnly' }, translate(TIER_HINT_KEYS[tier]))),
-				h('div', { className: 'bs-tier' },
+			return h(Field, { id: 'bs-tier-' + tier + '-route', label: title },
+				h('div', { className: current === '' ? 'bs-tier bs-tierInherit' : 'bs-tier' },
+					h('span', { className: 'bs-tierPurpose' }, translate(tier === 'fast' ? 'tierFastTask' : 'tierQualityTask')),
 					h('div', { className: 'bs-tierCell' },
-						h('label', { className: 'bs-controlLabel', htmlFor: 'bs-tier-' + tier + '-route' }, translate('route')),
-						h('select', {
+						h('span', { className: 'bs-controlLabel' }, translate('route')),
+						h(Select, {
 						className: 'bs-select',
 						id: 'bs-tier-' + tier + '-route',
 						'aria-label': translate('tierRouteLabel', { tier: title }),
@@ -783,18 +1049,21 @@ window.__ModuleLoader__.load({
 						// 换路由即清空 effort（旧值未必属于新模型）。
 						onChange: (event) => onPatch({ ...parseRouteKey(event.target.value), reasoningEffort: '' }),
 					}, routeOptions)),
-					h('div', { className: 'bs-tierCell' }, h('label', { className: 'bs-controlLabel', htmlFor: 'bs-tier-' + tier + '-effort' }, translate('effort')), effort)));
+					current === '' ? null : h('div', { className: 'bs-tierCell' }, h('label', { className: 'bs-controlLabel', htmlFor: 'bs-tier-' + tier + '-effort' }, translate('effort')), effort)));
 		}
 
-		/** CLI settings and models share the same draft. */
-		function BackendCard({ spec, backend, disabled, capabilities, discovery, discoveryMatches, scopeActive, t: translate, onPatch, onModelPatch, onModelAdd, onModelRemove, onDiscover, generation }) {
+		/** Default model and permissions are primary; paths and the catalog are expert settings. */
+		function BackendCard({ spec, backend, disabled, capabilities, discovery, discoveryMatches, scopeActive, t: translate, onPatch, onModelPatch, onModelAdd, onModelRemove, onDiscover, onDiagnostics, generation }) {
 			const title = spec.cli === 'codex' ? 'Codex' : 'Claude';
 			const status = discovery[spec.cli];
 			const profileNames = capabilities.status === 'ready' && Array.isArray(capabilities.value?.codexProfiles)
 				? capabilities.value.codexProfiles.filter((name) => typeof name === 'string') : [];
 			const modelIds = backend.models.map((model) => model.id.trim()).filter(Boolean);
+			const permissionKeys = { 'read-only': 'permissionReadOnly', 'workspace-write': 'permissionWrite', 'danger-full-access': 'permissionFull',
+				plan: 'permissionPlan', manual: 'permissionManual', dontAsk: 'permissionDontAsk', acceptEdits: 'permissionAcceptEdits', auto: 'permissionAuto', bypassPermissions: 'permissionBypass' };
 			const elevated = ['danger-full-access', 'bypassPermissions'].includes(backend.permissionMode);
 			const modelListRef = useRef(null);
+			const advancedRef = useRef(null);
 			const focusNewModel = useRef(false);
 			useEffect(() => {
 				if (!focusNewModel.current) return;
@@ -802,54 +1071,53 @@ window.__ModuleLoader__.load({
 				const inputs = modelListRef.current?.querySelectorAll('input[data-model-id]');
 				inputs?.[inputs.length - 1]?.focus();
 			}, [backend.models.length]);
+			const customized = Number(backend.executable !== spec.executable) + Number(Boolean(backend.profile)) + Number(backend.models.length > 0);
 			return h('section', { className: 'bs-card', 'aria-label': title },
 				h('div', { className: 'bs-cardHead' },
 					h('h3', { className: 'bs-cardTitle' }, title),
 					h(SwitchRow, { id: 'bs-' + spec.cli + '-enabled', label: translate('backendEnable'),
 						checked: backend.enabled, disabled, onChange: (enabled) => onPatch({ enabled }) })),
-				backend.enabled && !scopeActive ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('scopeNone')) : null,
-				h('div', { className: 'bs-backendSettings' },
-					h(Field, { id: 'bs-' + spec.cli + '-executable', label: translate('executableLabel'), hint: translate('executableHint') },
-						h('input', { className: 'bs-input bs-mono', type: 'text', id: 'bs-' + spec.cli + '-executable',
-							value: backend.executable, placeholder: spec.executable, spellCheck: false, autoComplete: 'off', disabled,
-							onChange: (event) => onPatch({ executable: event.target.value }) }),
-						h('p', { className: 'bs-hint bs-mono', role: 'status' }, discoveryMatches ? detectionOf(capabilities, spec, backend, translate) : translate('saveBeforeDiscover'))),
-					spec.profile ? h(Field, { id: 'bs-' + spec.cli + '-profile', label: translate('profileLabel'), hint: translate('profileHint') },
-						h('input', { className: 'bs-input bs-mono', id: 'bs-' + spec.cli + '-profile', list: 'bs-' + spec.cli + '-profiles',
-							value: backend.profile, placeholder: translate('profileNone'), autoComplete: 'off', spellCheck: false, disabled,
-							onChange: (event) => onPatch({ profile: event.target.value }) }),
-						h('datalist', { id: 'bs-' + spec.cli + '-profiles' }, optionNodes(profileNames, backend.profile))) : null,
-					h(Field, { id: 'bs-' + spec.cli + '-permission', label: translate('permissionLabel'), hint: translate('permissionHint') },
-						h('select', { className: 'bs-select', id: 'bs-' + spec.cli + '-permission', value: backend.permissionMode, disabled,
-							onChange: (event) => onPatch({ permissionMode: event.target.value }) }, optionNodes(spec.permissions, backend.permissionMode)),
-						elevated ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('permissionElevated')) : null)),
-				h('div', { className: 'bs-modelSection' },
-					h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title' }, translate('modelsLabel')),
-						h('div', { className: 'bs-actions' },
-							h('button', { type: 'button', id: 'bs-' + spec.cli + '-discover', className: 'bs-button', 'data-variant': 'outline',
-								title: translate('discoverHint'), disabled: disabled || !discoveryMatches || status?.status === 'loading', onClick: onDiscover },
-								status?.status === 'loading' ? translate('discovering') : translate('discover')),
-							h('button', { type: 'button', id: 'bs-' + spec.cli + '-add-model', className: 'bs-button', 'data-variant': 'outline', disabled,
-								onClick: () => { focusNewModel.current = true; onModelAdd(); } },
-								h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': true }, h('path', { d: 'M12 5v14M5 12h14' })), translate('modelAdd')))),
-					h(Field, { id: 'bs-' + spec.cli + '-default-model', label: translate('defaultModelLabel') },
-						h('select', { className: 'bs-select', id: 'bs-' + spec.cli + '-default-model', value: backend.defaultModel,
-							disabled: disabled || modelIds.length === 0,
-							'aria-invalid': backend.enabled && !modelIds.includes(backend.defaultModel.trim()),
-							onChange: (event) => onPatch({ defaultModel: event.target.value }) }, optionNodes(modelIds, backend.defaultModel, translate('defaultModelNone')))),
-					h('div', { ref: modelListRef }, backend.models.length === 0
-						? h('div', { className: 'bs-empty' },
-							h('svg', { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': true }, h('path', { d: 'm12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5' })),
-							h('p', { className: 'bs-emptyTitle' }, translate('modelsEmptyTitle')),
-							h('p', { className: 'bs-hint' }, translate('modelsEmpty')))
-						: h('div', { className: 'bs-models' },
-							h('div', { className: 'bs-modelHead', 'aria-hidden': true },
-								h('span', null, translate('modelIdPlaceholder')), h('span', null, translate('effort')),
-								h('span', null, translate('modelDefaultEffort')), h('span')),
-							backend.models.map((model, index) => h(ModelRow, { key: generation + ':' + index, model, index, disabled,
-								requiredDefault: backend.enabled && model.id.trim() === backend.defaultModel.trim(), t: translate,
-								onPatch: (patch) => onModelPatch(index, patch), onRemove: () => onModelRemove(index) })))),
-					status?.text ? h('p', { className: 'bs-hint', role: 'status', 'data-tone': status.status === 'error' ? 'error' : status.status === 'ok' ? 'ok' : undefined }, status.text) : null));
+				!backend.enabled ? h('p', { className: 'bs-srOnly' }, translate('backendOff')) : h('div', null,
+					h('div', { className: 'bs-fieldGrid' },
+						h(Field, { id: 'bs-' + spec.cli + '-default-model', label: translate('defaultModelLabel') },
+							h(Select, { className: 'bs-select', id: 'bs-' + spec.cli + '-default-model', value: backend.defaultModel,
+								disabled: disabled || modelIds.length === 0, 'aria-invalid': !modelIds.includes(backend.defaultModel.trim()),
+								onChange: (event) => onPatch({ defaultModel: event.target.value }) }, optionNodes(modelIds, backend.defaultModel, translate('defaultModelNone')))),
+						h(Field, { id: 'bs-' + spec.cli + '-permission', label: translate('permissionLabel'), hint: translate('permissionHint') },
+							h(Select, { className: 'bs-select', id: 'bs-' + spec.cli + '-permission', value: backend.permissionMode, disabled,
+								onChange: (event) => onPatch({ permissionMode: event.target.value }) }, optionNodes(spec.permissions, backend.permissionMode)),
+							h('p', { className: elevated ? 'bs-hint bs-hintWarn' : 'bs-hint' }, translate(permissionKeys[backend.permissionMode])))),
+					backend.models.length === 0 ? h('div', { className: 'bs-empty' },
+						h('p', { className: 'bs-hint' }, translate('modelsEmpty'))) : null,
+					h('div', { className: 'bs-actions' },
+						h('button', { type: 'button', id: 'bs-' + spec.cli + '-discover', className: 'bs-button', 'data-variant': 'outline',
+							disabled: disabled || !discoveryMatches || status?.status === 'loading', 'aria-busy': status?.status === 'loading', onClick: onDiscover },
+							status?.status === 'loading' ? h('span', { className: 'bs-spinner', 'aria-hidden': true }) : null,
+							status?.status === 'loading' ? translate('discovering') : translate('discover')),
+						h('button', { type: 'button', id: 'bs-' + spec.cli + '-add-model', className: 'bs-button', 'data-variant': 'outline', disabled,
+							onClick: () => { if (advancedRef.current) advancedRef.current.open = true; focusNewModel.current = true; onModelAdd(); } },
+							h('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'aria-hidden': true }, h('path', { d: 'M12 5v14M5 12h14' })), translate('modelAdd')),
+						h('button', { type: 'button', className: 'bs-button', onClick: onDiagnostics }, translate('diagnosticsLink'))),
+					!discoveryMatches ? h('p', { className: 'bs-hint' }, translate('saveBeforeDiscover')) : null,
+					status?.text ? h('p', { className: 'bs-hint', role: status.status === 'error' ? 'alert' : 'status', 'data-tone': status.status === 'error' ? 'error' : 'ok' }, status.text) : null,
+					h(Advanced, { detailsRef: advancedRef, summary: customized ? translate('customized', { count: customized }) : translate('defaults') },
+						h(Field, { id: 'bs-' + spec.cli + '-executable', label: translate('executableLabel'), hint: translate('executableHint') },
+							h('input', { className: 'bs-input bs-mono', type: 'text', id: 'bs-' + spec.cli + '-executable',
+								value: backend.executable, placeholder: spec.executable, spellCheck: false, autoComplete: 'off', disabled,
+								onChange: (event) => onPatch({ executable: event.target.value }) })),
+						spec.profile ? h(Field, { id: 'bs-' + spec.cli + '-profile', label: translate('profileLabel'), hint: translate('profileHint') },
+							h('input', { className: 'bs-input bs-mono', id: 'bs-' + spec.cli + '-profile', value: backend.profile,
+								placeholder: translate('profileNone'), autoComplete: 'off', spellCheck: false, disabled, onChange: (event) => onPatch({ profile: event.target.value }) }),
+							h('div', { className: 'bs-profileChoices', id: 'bs-' + spec.cli + '-profiles' }, profileNames.map((profile) => h('button', {
+								key: profile, type: 'button', className: 'bs-button bs-mono', disabled, 'aria-label': translate('profileChoose', { profile }),
+								'aria-pressed': backend.profile === profile, onClick: () => onPatch({ profile }),
+							}, profile)))) : null,
+						h(Field, { wide: true, label: translate('modelsLabel'), hint: translate('modelsHint') + ' ' + translate('discoverHint') },
+							backend.models.length === 0 ? null : h('div', { className: 'bs-models', ref: modelListRef },
+								h('div', { className: 'bs-modelHead', 'aria-hidden': true }, h('span', null, translate('modelIdPlaceholder')), h('span', null, translate('effort')), h('span', null, translate('modelDefaultEffort')), h('span')),
+								backend.models.map((model, index) => h(ModelRow, { key: generation + ':' + index, model, index, disabled,
+									requiredDefault: model.id.trim() === backend.defaultModel.trim(), t: translate,
+									onPatch: (patch) => onModelPatch(index, patch), onRemove: () => onModelRemove(index) })))))));
 		}
 
 
@@ -864,6 +1132,12 @@ window.__ModuleLoader__.load({
 			const [generation, setGeneration] = useState(0);
 			const [busy, setBusy] = useState(false);
 			const [notice, setNotice] = useState(null);
+			const [discardFor, setDiscardFor] = useState(null);
+			useEffect(() => {
+				if (notice?.tone !== 'ok') return;
+				const timer = setTimeout(() => setNotice(null), 4000);
+				return () => clearTimeout(timer);
+			}, [notice]);
 			/** 每个后端的发现状态：`{ status: 'loading' | 'ok' | 'error', text? }`。 */
 			const [discovery, setDiscovery] = useState({});
 			const [tab, setTab] = useState('general');
@@ -878,13 +1152,14 @@ window.__ModuleLoader__.load({
 			const writable = state?.status === 'ready' && state?.writable === true && state?.mode !== 'memory';
 			const dirty = live !== null && host !== null && JSON.stringify(live) !== JSON.stringify(host);
 			const invalid = live === null ? null : validate(live, allowed);
+			const changeCount = dirty ? diffOps(host, live).length : 0;
+			const dirtyKey = JSON.stringify(live);
 
 			if (state === undefined) {
 				// 官方页面在镜像读到该命名空间前不传 form：这是正常加载窗口，
 				// 长期停在这里才说明本部署缺少 settings/config-editor。
 				return h('div', { className: 'bs-cfg' },
-					h('p', { className: 'bs-note bs-pulse', role: 'status' }, translate('waitingForm')),
-					h('p', { className: 'bs-hint' }, translate('noFormHint')));
+					h('p', { className: 'bs-note bs-pulse', role: 'status', title: translate('noFormHint') }, translate('waitingForm')));
 			}
 			if (state.status === 'loading') {
 				return h('div', { className: 'bs-cfg' },
@@ -897,6 +1172,7 @@ window.__ModuleLoader__.load({
 
 			/** 记一次草稿修改（函数式叠加：连续编辑不丢改动；换 revision 即失效）。 */
 			const edit = (mutate) => {
+				setDiscardFor(null);
 				setDraft((previous) => {
 					const base = previous !== null && previous.revision === revision ? previous.value : live;
 					return { revision, value: mutate(base) };
@@ -1033,6 +1309,7 @@ window.__ModuleLoader__.load({
 					if (accepted) {
 						// 草稿保留：mirror 折叠后 revision 前进、草稿自动失效（避免回显旧值闪烁）。
 						setNotice({ tone: 'ok', text: translate('saved') });
+						navigationTabs.current[tab]?.focus();
 					} else {
 						setDraft(null);
 						setGeneration((value) => value + 1);
@@ -1045,6 +1322,9 @@ window.__ModuleLoader__.load({
 				}
 			};
 			const reset = () => {
+				if (changeCount > 3 && discardFor !== dirtyKey) { setDiscardFor(dirtyKey); return; }
+				setDiscardFor(null);
+				navigationTabs.current[tab]?.focus();
 				requests.current = {};
 				setDiscovery({});
 				setDraft(null);
@@ -1054,8 +1334,7 @@ window.__ModuleLoader__.load({
 
 			const scopeActive = live.subagents.eng || live.subagents.global;
 			const navigate = (next, cli) => {
-				setTab(next);
-				if (cli) setBackendTab(cli);
+				setTab(next); if (cli) setBackendTab(cli);
 				navigationTabs.current[next]?.focus();
 			};
 			const invalidTab = invalid?.titleKey?.startsWith('tier') ? 'tiers' : invalid?.titleKey ? 'cli' : 'connection';
@@ -1065,40 +1344,51 @@ window.__ModuleLoader__.load({
 					? h('span', { className: 'bs-status', role: 'alert' }, h('button', { type: 'button', className: 'bs-button bs-errorLink',
 						onClick: () => navigate(invalidTab, invalid.titleKey === 'claudeTitle' ? 'claude' : 'codex') },
 						translate(invalid.key, { backend: invalid.titleKey ? translate(invalid.titleKey) : '' })))
-					: h('span', { className: 'bs-status', role: 'status' }, !writable ? translate('readonlyNote') : dirty ? translate('unsaved') : '');
+					: null;
 			const panelProps = (name) => ({ id: 'bs-settings-panel-' + name, className: 'bs-tabpanel', role: 'tabpanel',
 				'aria-labelledby': 'bs-settings-tab-' + name, tabIndex: 0, hidden: tab !== name });
-			return h('div', { className: 'bs-cfg' },
-				h('div', { className: 'bs-header' }, h('h2', { className: 'bs-title' }, translate('title'))),
-				writable ? null : h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('readonly')),
+			return h('div', { className: 'bs-cfg', 'data-settings-dirty': dirty, 'data-settings-busy': busy },
+				h('div', { className: 'bs-header' }, h('h2', { className: 'bs-title' }, translate('title')),
+					writable ? null : h('span', { className: 'bs-badge', role: 'status', title: translate('readonly') }, translate('readonlyShort'))),
 				h(Tabs, { id: 'bs-settings', label: translate('title'), value: tab, onChange: setTab, tabRefs: navigationTabs, items: [
 					{ id: 'general', label: translate('tabGeneral') }, { id: 'cli', label: translate('tabCli') },
 					{ id: 'tiers', label: translate('tabTiers') }, { id: 'connection', label: translate('tabConnection') }] }),
 				h('div', panelProps('general'),
 					h('section', { className: 'bs-section' },
-						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title' }, translate('tabCli'))),
+						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title bs-sectionTitle' }, translate('routingPreview'))),
+						...TIERS.map((tier) => h('div', { key: tier, className: 'bs-routing' },
+							h('span', { className: 'bs-routingLabel' }, translate(tier === 'fast' ? 'tierFastTask' : 'tierQualityTask')),
+							h('span', { className: 'bs-routingArrow', 'aria-hidden': true }, '→'),
+							h('button', { type: 'button', className: 'bs-routingTarget bs-mono', onClick: () => navigate('tiers') },
+								routeKey(live.tiers[tier]) || translate('tierInherit'))))),
+					h('section', { className: 'bs-section' },
+						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title bs-sectionTitle' }, translate('backendsTitle'))),
 						h('div', { className: 'bs-overview' }, BACKENDS.map((spec) => {
 							const backend = live.subagents[spec.cli];
 							const title = spec.cli === 'codex' ? 'Codex' : 'Claude';
 							return h('button', { key: spec.cli, type: 'button', id: 'bs-open-' + spec.cli, className: 'bs-overviewRow',
 								'aria-label': translate('configureBackend', { backend: title }), onClick: () => navigate('cli', spec.cli) },
 								h('span', { className: 'bs-overviewGlyph', 'aria-hidden': true }, h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }, h('path', { d: 'M4 5h16v14H4Zm4 5 2 2-2 2m5 0h3' }))),
-								h('span', { className: 'bs-overviewName' }, h('span', null, title),
-									h('span', { className: 'bs-overviewMeta bs-mono' }, backend.enabled ? (translate('modelCount', { count: backend.models.length }) + (backend.defaultModel ? ' · ' + backend.defaultModel : '')) : '')),
-								h('span', { className: 'bs-badge', 'data-active': backend.enabled && scopeActive }, h('span', { className: 'bs-dot', 'data-active': backend.enabled && scopeActive, 'aria-hidden': true }),
-									translate(!backend.enabled ? 'inactive' : !scopeActive ? 'scopeInactive' : 'configured')), h(Chevron));
+								h('span', { className: 'bs-overviewName' },
+									h('span', null, title),
+									h('span', { className: 'bs-overviewMeta' },
+										h('span', { className: 'bs-dot', 'data-active': backend.enabled && scopeActive, 'aria-hidden': true }),
+										h('span', null, backend.enabled ? translate('modelCount', { count: backend.models.length }) : translate('inactive')),
+										backend.enabled && backend.defaultModel ? h('span', { className: 'bs-mono' }, ' · ' + backend.defaultModel) : null)),
+								h(Chevron));
 						}))),
 					h('section', { className: 'bs-section' },
-						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title' }, translate('scopeTitle'))),
-						h(SwitchRow, { id: 'bs-scope-eng', label: translate('scopeEng'), hint: translate('scopeEngHint'), checked: live.subagents.eng,
-							disabled: !writable || busy, onChange: (eng) => edit((current) => ({ ...current, subagents: { ...current.subagents, eng } })) }),
+						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title bs-sectionTitle' }, translate('scopeTitle'))),
+						h(SwitchRow, { id: 'bs-scope-eng', label: translate('scopeEng'), hint: translate('scopeEngHint'),
+							checked: live.subagents.global ? true : live.subagents.eng, disabled: !writable || busy || live.subagents.global,
+							onChange: (eng) => edit((current) => ({ ...current, subagents: { ...current.subagents, eng } })) }),
 						h(SwitchRow, { id: 'bs-scope-global', label: translate('scopeGlobal'), hint: translate('scopeGlobalHint'), checked: live.subagents.global,
 							disabled: !writable || busy, onChange: (global) => edit((current) => ({ ...current, subagents: { ...current.subagents, global } })) }),
-						!scopeActive ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('scopeNone'))
-							: live.subagents.global ? h('p', { className: 'bs-hint' }, translate('globalOverrides')) : null),
+						!scopeActive ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('scopeNone')) : null),
 					h('section', { className: 'bs-section' },
-						h('h3', { className: 'bs-title' }, translate('behaviorTitle')), h(SwitchRow, { id: 'bs-child-exit-guard', label: translate('childExitGuardLabel'), hint: translate('childExitGuardHint'),
-						checked: live.childExitGuard, disabled: !writable || busy, onChange: (childExitGuard) => edit((current) => ({ ...current, childExitGuard })) }))),
+						h('div', { className: 'bs-sectionHead' }, h('h3', { className: 'bs-title bs-sectionTitle' }, translate('behaviorTitle'))),
+						h(SwitchRow, { id: 'bs-child-exit-guard', label: translate('childExitGuardLabel'), hint: translate('childExitGuardHint'),
+							checked: live.childExitGuard, disabled: !writable || busy, onChange: (childExitGuard) => edit((current) => ({ ...current, childExitGuard })) }))),
 				h('div', panelProps('cli'),
 					h(Tabs, { id: 'bs-backend', label: translate('tabCli'), compact: true, value: backendTab, onChange: setBackendTab,
 						items: BACKENDS.map((spec) => ({ id: spec.cli, label: spec.cli === 'codex' ? 'Codex' : 'Claude', active: live.subagents[spec.cli].enabled && scopeActive })) }),
@@ -1107,32 +1397,47 @@ window.__ModuleLoader__.load({
 						h(BackendCard, { spec, backend: live.subagents[spec.cli], disabled: !writable || busy, capabilities, discovery,
 							discoveryMatches: live.subagents[spec.cli].executable === host.subagents[spec.cli].executable && live.subagents[spec.cli].profile === host.subagents[spec.cli].profile,
 							scopeActive, t: translate, generation, onPatch: (patch) => patchBackend(spec, patch), onModelPatch: (index, patch) => patchModel(spec, index, patch),
-							onModelAdd: () => addModel(spec), onModelRemove: (index) => removeModel(spec, index), onDiscover: () => discoverModels(spec) })))),
+							onModelAdd: () => addModel(spec), onModelRemove: (index) => removeModel(spec, index), onDiscover: () => discoverModels(spec), onDiagnostics: () => navigate('connection') })))),
 				h('div', panelProps('tiers'),
 					h('section', { className: 'bs-section' },
-						h('div', { className: 'bs-heading' }, h('h3', { className: 'bs-title' }, translate('tiersTitle'))),
 						routesState.status === 'loading' ? h('p', { className: 'bs-hint', role: 'status' }, translate('routesLoading'))
 							: allowed === null ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('routesError'))
 								: !allowed.enabled || allowed.routes.length === 0 ? h('p', { className: 'bs-note', 'data-tone': 'warn' }, translate('tiersInactive')) : null,
-						...TIERS.map((tier) => h(TierRow, { key: tier, tier, value: live.tiers[tier], allowed, disabled: !writable || busy,
-							t: translate, onPatch: (patch) => patchTier(tier, patch) })))),
+						h('div', { className: 'bs-tierGrid' },
+							...TIERS.map((tier) => h(TierRow, { key: tier, tier, value: live.tiers[tier], allowed, disabled: !writable || busy,
+								t: translate, onPatch: (patch) => patchTier(tier, patch) }))))),
 				h('div', panelProps('connection'),
 					h('section', { className: 'bs-section' },
-						h('div', { className: 'bs-sectionHead' }, h('div', { className: 'bs-heading' }, h('h3', { className: 'bs-title' }, translate('tabConnection'))),
+						h(Advanced, { label: translate('trustedHostsLabel'), summary: live.trustedHosts.length ? translate('trustedCount', { count: live.trustedHosts.length }) : translate('trustedDefault') },
+							h(Field, { id: 'bs-trusted-hosts', label: translate('trustedHostsLabel'), hint: translate('trustedHostsHint') },
+								h(HostList, { key: generation, hosts: live.trustedHosts, disabled: !writable || busy, t: translate,
+									onChange: (trustedHosts) => edit((current) => ({ ...current, trustedHosts })) })))),
+					h('section', { className: 'bs-section', 'aria-label': translate('readonlyDiagnostics') },
+						h('div', { className: 'bs-sectionHead' },
+							h('div', { className: 'bs-toolbar' }, h('h3', { className: 'bs-title bs-sectionTitle' }, translate('readonlyDiagnostics'))),
 							h('button', { type: 'button', id: 'bs-refresh', className: 'bs-button', 'data-variant': 'outline',
-								disabled: capabilities.status === 'loading' || routesState.status === 'loading', onClick: () => { capabilities.reload(); routesState.reload(); } }, translate('refresh'))),
-						h('div', { className: 'bs-connectionRow' }, h('span', null, translate('connectionMode')), h('span', { className: 'bs-badge', 'data-active': writable }, h('span', { className: 'bs-dot', 'data-active': writable, 'aria-hidden': true }), translate(writable ? 'connectionWritable' : 'connectionReadonly'))),
-						...[[translate('capabilitiesLabel'), capabilities], [translate('routesLabel'), routesState]].map(([label, endpoint]) =>
-							h('div', { key: label, className: 'bs-connectionRow' }, h('span', null, label), h('span', { className: 'bs-connectionStatus', role: 'status' },
-								h('span', { className: 'bs-dot', 'data-active': endpoint.status === 'ready', 'aria-hidden': true }),
-								translate(endpoint.status === 'loading' ? 'loading' : endpoint.status === 'ready' ? 'ready' : 'failed'))))),
-					h('section', { className: 'bs-section' }, h(Field, { id: 'bs-trusted-hosts', label: translate('trustedHostsLabel'), hint: translate('trustedHostsHint'), showHint: true },
-						h(HostList, { key: generation, hosts: live.trustedHosts, disabled: !writable || busy, t: translate,
-							onChange: (trustedHosts) => edit((current) => ({ ...current, trustedHosts })) })))),
-				h('div', { className: 'bs-footer' }, status,
-					h('button', { type: 'button', className: 'bs-button', 'data-variant': 'outline', disabled: busy || !dirty, onClick: reset }, translate('reset')),
-					h('button', { type: 'button', className: 'bs-button', 'data-variant': 'primary', disabled: !writable || busy || !dirty || invalid !== null,
-						onClick: () => void save() }, busy ? translate('saving') : translate('save'))));
+								disabled: capabilities.status === 'loading' || routesState.status === 'loading', 'aria-busy': capabilities.status === 'loading' || routesState.status === 'loading',
+								onClick: () => { capabilities.reload(); routesState.reload(); } }, translate('refresh'))),
+						h('div', { className: 'bs-diagGrid' },
+							h('div', { className: 'bs-metric' }, h('span', { className: 'bs-metricLabel' }, translate('connectionMode')),
+								h('span', { className: 'bs-metricValue' }, translate(writable ? 'connectionWritable' : 'connectionReadonly'))),
+							...BACKENDS.map((spec) => {
+								const detection = detectionOf(capabilities, spec, host.subagents[spec.cli], translate);
+								return h('div', { key: spec.cli, className: 'bs-metric' },
+									h('span', { className: 'bs-metricLabel' }, spec.cli === 'codex' ? 'Codex' : 'Claude'),
+									h('span', { className: 'bs-metricValue bs-mono', role: 'status', title: detection }, detection));
+							})),
+						h('div', { className: 'bs-connectionRow' }, h('span', null, translate('routesLabel')),
+							h('span', { className: 'bs-hint', role: 'status' }, routesState.status === 'loading' ? translate('loading')
+								: allowed === null ? translate('failed') : !allowed.enabled ? translate('inactive') : translate('modelCount', { count: allowed.routes.length }))))),
+				notice !== null || invalid !== null ? h('div', { className: 'bs-feedback' }, status) : null,
+				dirty ? h('div', { className: 'bs-footer' },
+					h('span', { className: 'bs-status' }, translate('changeCount', { count: changeCount })),
+					h('button', { type: 'button', className: 'bs-button', 'data-variant': 'outline', disabled: busy, onClick: reset },
+						translate(discardFor === dirtyKey ? 'resetConfirm' : 'reset')),
+					h('button', { type: 'button', className: 'bs-button', 'data-variant': 'primary', disabled: !writable || busy || invalid !== null,
+						'aria-busy': busy, onClick: () => void save() }, busy ? h('span', { className: 'bs-spinner', 'aria-hidden': true }) : null,
+						busy ? translate('saving') : translate('save'))) : null);
 		}
 
 		/**
