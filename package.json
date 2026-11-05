@@ -1,6 +1,6 @@
 {
   "name": "@menghuan1918/dsh-better-subagent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Standalone DSH plugin: Codex/Claude continuable CLI subagents, wait_subagent, child exit guard and model tiers. Pure ESM, no build step.",
   "license": "Apache-2.0",
   "repository": {
