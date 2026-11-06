@@ -125,12 +125,14 @@ const liveSchema = new z(Config.toJSON())
 
 // ── 形状契约 ────────────────────────────────────────────────────────────────
 
-test('标识常量：行 id / scoped 包名 / 四个行配置键（同一行）', () => {
+test('标识常量：行 id / scoped 包名 / 六个行配置键（同一行）', () => {
   assert.equal(ENTRY_ID, 'dsh-better-subagent')
-  assert.equal(PACKAGE_NAME, '@menghuan1918/dsh-better-subagent')
-  assert.deepEqual([...LEGACY_PACKAGE_NAMES], ['@menghuan1918/dsh-apollo', 'dsh-apollo'])
-  assert.equal(ROW_CONFIG_KEY, '@menghuan1918/dsh-better-subagent#dsh-better-subagent')
+  assert.equal(PACKAGE_NAME, '@oh-my-dsh/dsh-better-subagent')
+  assert.deepEqual([...LEGACY_PACKAGE_NAMES], ['@menghuan1918/dsh-better-subagent', '@menghuan1918/dsh-apollo', 'dsh-apollo'])
+  assert.equal(ROW_CONFIG_KEY, '@oh-my-dsh/dsh-better-subagent#dsh-better-subagent')
   assert.deepEqual([...ROW_CONFIG_KEYS], [
+    '@oh-my-dsh/dsh-better-subagent#dsh-better-subagent',
+    'dsh-better-dsh#dsh-better-subagent',
     '@menghuan1918/dsh-better-subagent#dsh-better-subagent',
     '@menghuan1918/dsh-apollo#dsh-better-subagent',
     'dsh-apollo#dsh-better-subagent',

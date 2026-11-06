@@ -157,7 +157,7 @@ function install() {
     loaded,
     declare() {
       const disposers = slots.declare('plugins.row.config')
-      assert.equal(slots.registrations.length, 4)
+      assert.equal(slots.registrations.length, 6)
       return { disposers, component: slots.registrations[0].component }
     },
   }
@@ -226,19 +226,21 @@ useFetch(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, va
 
 test('装载与 slot 注册：声明才注册、新键与旧键并排、塌缩回收、summary 只回一行', async () => {
   const { slots, effects, dicts, loaded, declare } = install()
-  assert.equal(loaded.entry.id, '@menghuan1918/dsh-better-subagent')
+  assert.equal(loaded.entry.id, '@oh-my-dsh/dsh-better-subagent')
   assert.deepEqual(loaded.exports.inject, ['slots', 'locale'])
   assert.equal(SOURCE.includes('document.'), false)
 
   // 页面未打开（槽未声明）：只挂等待，不注册。
   assert.deepEqual(slots.injected, ['plugins.row.config'])
   assert.equal(slots.registrations.length, 0)
-  assert.deepEqual(effects.map((effect) => effect.label), ['@menghuan1918/dsh-better-subagent: dictionaries', '@menghuan1918/dsh-better-subagent: row config page'])
+  assert.deepEqual(effects.map((effect) => effect.label), ['@oh-my-dsh/dsh-better-subagent: dictionaries', '@oh-my-dsh/dsh-better-subagent: row config page'])
   assert.deepEqual(dicts.map((entry) => entry.ns), [NS])
   assert.deepEqual(Object.keys(dicts[0].dictionaries.zh).sort(), Object.keys(dicts[0].dictionaries.en).sort())
 
   const declared = declare()
   assert.deepEqual(slots.registrations.map((entry) => entry.options), [
+    { name: 'plugins.row.config', key: '@oh-my-dsh/dsh-better-subagent#dsh-better-subagent', locale: NS },
+    { name: 'plugins.row.config', key: 'dsh-better-dsh#dsh-better-subagent', locale: NS },
     { name: 'plugins.row.config', key: '@menghuan1918/dsh-better-subagent#dsh-better-subagent', locale: NS },
     { name: 'plugins.row.config', key: '@menghuan1918/dsh-apollo#dsh-better-subagent', locale: NS },
     { name: 'plugins.row.config', key: 'dsh-apollo#dsh-better-subagent', locale: NS },

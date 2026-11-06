@@ -1,5 +1,5 @@
 /**
- * dsh-better-subagent (npm: @menghuan1918/dsh-better-subagent) —— 正式插件配置
+ * dsh-better-subagent (npm: @oh-my-dsh/dsh-better-subagent) —— 正式插件配置
  * （Config）与配置读取/规整。
  *
  * 这里是本包「设置」的唯一事实源。宿主行 `dsh-better-subagent` 由
@@ -32,21 +32,23 @@ import z from '@deepseek-ai/schemastery'
 /** 本包在 profile roster 里的行 id；也是 dsh-settings 的命名空间（= Loader entry id）。 */
 export const ENTRY_ID = 'dsh-better-subagent'
 /** 包的 npm 名（scoped）。 */
-export const PACKAGE_NAME = '@menghuan1918/dsh-better-subagent'
+export const PACKAGE_NAME = '@oh-my-dsh/dsh-better-subagent'
 /**
- * Apollo 集成时可能出现的旧行/旧包名。只用于行配置 slot 兼容（浏览器半边并排
- * 注册旧键）与活配置查找的兜底；bundle 行、模块 specifier 与 client closure id
- * 一律用 PACKAGE_NAME。
+ * 旧包名/旧集成行名。只用于行配置 slot 兼容（浏览器半边并排注册旧键）与活配置
+ * 查找的兜底；bundle 行、模块 specifier 与 client closure id 一律用 PACKAGE_NAME。
  */
-export const LEGACY_PACKAGE_NAMES = Object.freeze(['@menghuan1918/dsh-apollo', 'dsh-apollo'])
+export const LEGACY_PACKAGE_NAMES = Object.freeze(['@menghuan1918/dsh-better-subagent', '@menghuan1918/dsh-apollo', 'dsh-apollo'])
 /** 浏览器半边注册 `plugins.row.config` 用的主键：`<包名>#<行 id>`。 */
 export const ROW_CONFIG_KEY = `${PACKAGE_NAME}#${ENTRY_ID}`
 /**
- * 兼容/集成键，全部指向同一行、同一份配置。`<行 id>#<行 id>` 是 Apollo 集成槽
- * 的短别名（没有作用域时也能被插件页匹配）；绝不因此产生第二份配置存储。
+ * 兼容/集成键，全部指向同一行、同一份配置。`dsh-better-dsh#<row>` 是 Better DSH
+ * 集成槽；旧 scoped/unscoped Apollo 键保留给旧 profile；`<行 id>#<行 id>` 是
+ * 无作用域短别名。绝不因此产生第二份配置存储。
  */
 export const ROW_CONFIG_KEYS = Object.freeze([
   ROW_CONFIG_KEY,
+  `dsh-better-dsh#${ENTRY_ID}`,
+  `@menghuan1918/dsh-better-subagent#${ENTRY_ID}`,
   `@menghuan1918/dsh-apollo#${ENTRY_ID}`,
   `dsh-apollo#${ENTRY_ID}`,
   `${ENTRY_ID}#${ENTRY_ID}`,

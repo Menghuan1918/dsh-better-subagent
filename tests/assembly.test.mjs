@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url))
-const PACKAGE_NAME = '@menghuan1918/dsh-better-subagent'
+const PACKAGE_NAME = '@oh-my-dsh/dsh-better-subagent'
 const ENTRY_ID = 'dsh-better-subagent'
 const manifest = () => JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const patch = () => yaml.load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8'))
@@ -26,7 +26,7 @@ const patch = () => yaml.load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8
 test('manifest identity: scoped name, version, Apache-2.0, repository, publish config', () => {
   const m = manifest()
   assert.equal(m.name, PACKAGE_NAME)
-  assert.equal(m.version, '0.4.0')
+  assert.equal(m.version, '0.5.0')
   assert.equal(m.license, 'Apache-2.0')
   assert.equal(m.type, 'module')
   assert.equal(m.main, 'src/index.js')
@@ -37,7 +37,7 @@ test('manifest identity: scoped name, version, Apache-2.0, repository, publish c
   })
   assert.deepEqual(m.repository, {
     type: 'git',
-    url: 'git+https://github.com/Menghuan1918/dsh-better-subagent.git',
+    url: 'git+https://github.com/omdsh-dev/dsh-better-subagent.git',
   })
   assert.deepEqual(m.publishConfig, {
     registry: 'https://registry.npmjs.org/',
@@ -100,7 +100,7 @@ test('manifest dsh block: bundle patch path and client platform/inject baseline'
 test('scoped install layout: package root, client and package.json resolve', () => {
   const dir = mkdtempSync(join(tmpdir(), 'better-subagent-scoped-'))
   try {
-    const scope = join(dir, 'node_modules', '@menghuan1918')
+    const scope = join(dir, 'node_modules', '@oh-my-dsh')
     mkdirSync(scope, { recursive: true })
     symlinkSync(ROOT, join(scope, 'dsh-better-subagent'), process.platform === 'win32' ? 'junction' : 'dir')
     writeFileSync(join(dir, 'package.json'), '{}\n')
@@ -113,11 +113,13 @@ test('scoped install layout: package root, client and package.json resolve', () 
   }
 })
 
-test('client half: closure id equals the package name and all four row config keys exist', () => {
+test('client half: closure id equals the package name and all six row config keys exist', () => {
   const source = readFileSync(join(ROOT, 'src/client.js'), 'utf8')
   assert.equal(source.includes(`id: '${PACKAGE_NAME}'`), true)
   for (const key of [
     `${PACKAGE_NAME}#${ENTRY_ID}`,
+    `dsh-better-dsh#${ENTRY_ID}`,
+    `@menghuan1918/dsh-better-subagent#${ENTRY_ID}`,
     `@menghuan1918/dsh-apollo#${ENTRY_ID}`,
     `dsh-apollo#${ENTRY_ID}`,
     `${ENTRY_ID}#${ENTRY_ID}`,

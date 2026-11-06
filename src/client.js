@@ -1,26 +1,28 @@
 /**
- * dsh-better-subagent (npm: @menghuan1918/dsh-better-subagent) — 浏览器半边：
+ * dsh-better-subagent (npm: @oh-my-dsh/dsh-better-subagent) — 浏览器半边：
  * 官方 Plugins 页的行配置表单。
  *
  * 宿主行导出正式 volatile Config，dsh-settings 把它投影成行配置表单；本文件注册
- * `plugins.row.config`（主键 `@menghuan1918/dsh-better-subagent#dsh-better-subagent`，
- * 与 src/config.js 的 ROW_CONFIG_KEYS 同步；Apollo 集成键并排注册同一页面），
+ * `plugins.row.config`（主键 `@oh-my-dsh/dsh-better-subagent#dsh-better-subagent`，
+ * 与 src/config.js 的 ROW_CONFIG_KEYS 同步；Better DSH / Apollo 兼容键并排注册同一页面），
  * 自画紧凑表单并只在保存时一次提交全部改动。零构建：
  * closure factory，只 require('react')，不 import 任何 DSH client 包；样式随组件
  * 树内一个 <style> 渲染（不写 DOM）。注册 id 必须等于 npm 包名（client closure id）。
  */
 
 window.__ModuleLoader__.load({
-	id: '@menghuan1918/dsh-better-subagent',
+	id: '@oh-my-dsh/dsh-better-subagent',
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
 		const { createElement: h, cloneElement, isValidElement, useEffect, useId, useRef, useState } = require('react');
 
 		const NS = 'better-subagent';
-		// Primary key first, then the Apollo-integration compatibility keys. All
-		// four render the same page over the one row config; no second store.
+		// Primary key first, then the Better DSH / Apollo compatibility keys. All
+		// six render the same page over the one row config; no second store.
 		const ROW_KEYS = [
+			'@oh-my-dsh/dsh-better-subagent#dsh-better-subagent',
+			'dsh-better-dsh#dsh-better-subagent',
 			'@menghuan1918/dsh-better-subagent#dsh-better-subagent',
 			'@menghuan1918/dsh-apollo#dsh-better-subagent',
 			'dsh-apollo#dsh-better-subagent',
@@ -370,7 +372,7 @@ window.__ModuleLoader__.load({
 
 		// ── 样式（组件树内的 <style>；复用 DSH 设计令牌，与官方设置页同观感）──────────
 
-		const STYLE_ID = '@menghuan1918/dsh-better-subagent/settings.css';
+		const STYLE_ID = '@oh-my-dsh/dsh-better-subagent/settings.css';
 		const CSS = `.bs-root{--cfg-accent:#3388BB;--cfg-accent-solid:#20709e;--cfg-accent-fg:#fff;--cfg-accent-text:#14587f;--cfg-accent-hover:#1b628c;--cfg-accent-soft:color-mix(in srgb,var(--cfg-accent) 10%,transparent);--cfg-bg:var(--dsw-alias-bg-layer-1);--cfg-raised:var(--dsw-alias-bg-layer-2);--cfg-overlay:var(--dsw-alias-bg-layer-3);--cfg-sunken:color-mix(in srgb,var(--dsw-alias-label-primary) 4%,var(--dsw-alias-bg-layer-1));--cfg-ink:var(--dsw-alias-label-primary);--cfg-muted:var(--dsw-alias-label-secondary);--cfg-dim:color-mix(in srgb,var(--dsw-alias-label-tertiary) 80%,var(--dsw-alias-label-primary));--cfg-line:var(--dsw-alias-border-l2);--cfg-line-strong:var(--dsw-alias-border-l3);--cfg-hover:var(--dsw-alias-interactive-bg-hover);--cfg-danger:var(--dsw-alias-state-error-primary);--cfg-warn:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 60%,var(--dsw-alias-label-primary));--cfg-success:color-mix(in srgb,var(--dsw-alias-state-success-primary) 60%,var(--dsw-alias-label-primary));--cfg-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--cfg-ink);font:inherit;font-size:13px;line-height:20px;min-width:0;font-variant-numeric:tabular-nums;display:flex;flex-direction:column;flex:1;min-height:0}
 [data-ds-dark-theme] .bs-root{--cfg-accent:#4eb0e8;--cfg-accent-solid:#4eb0e8;--cfg-accent-fg:#0e1014;--cfg-accent-text:#6fc0ee;--cfg-accent-hover:#6fc0ee;--cfg-accent-soft:color-mix(in srgb,var(--cfg-accent) 14%,transparent)}
 .bs-root,.bs-root *{box-sizing:border-box}
@@ -1457,7 +1459,7 @@ window.__ModuleLoader__.load({
 			try {
 				const dispose = ctx.locale.register(NS, { zh, en });
 				t = ctx.locale.bind(NS);
-				ctx.effect(() => dispose, '@menghuan1918/dsh-better-subagent: dictionaries');
+				ctx.effect(() => dispose, '@oh-my-dsh/dsh-better-subagent: dictionaries');
 			} catch {
 				// locale 服务缺失时保持中文默认。
 			}
@@ -1478,7 +1480,7 @@ window.__ModuleLoader__.load({
 				return () => {
 					for (const dispose of disposers) dispose();
 				};
-			}), '@menghuan1918/dsh-better-subagent: row config page');
+			}), '@oh-my-dsh/dsh-better-subagent: row config page');
 		}
 
 		exports.inject = inject;

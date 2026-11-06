@@ -1,11 +1,11 @@
 {
-  "name": "@menghuan1918/dsh-better-subagent",
-  "version": "0.4.0",
+  "name": "@oh-my-dsh/dsh-better-subagent",
+  "version": "0.5.0",
   "description": "Standalone DSH plugin: Codex/Claude continuable CLI subagents, wait_subagent, child exit guard and model tiers. Pure ESM, no build step.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Menghuan1918/dsh-better-subagent.git"
+    "url": "git+https://github.com/omdsh-dev/dsh-better-subagent.git"
   },
   "type": "module",
   "main": "src/index.js",
@@ -83,5 +83,9 @@
         "@deepseek-ai/dsh-client-locale"
       ]
     }
+  },
+  "homepage": "https://github.com/omdsh-dev/dsh-better-subagent#readme",
+  "bugs": {
+    "url": "https://github.com/omdsh-dev/dsh-better-subagent/issues"
   }
 }
